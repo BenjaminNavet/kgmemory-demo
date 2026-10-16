@@ -1,0 +1,993 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KGmemory, explained</title>
+<meta name="description" content="An animated, beginner-friendly walk-through of KGmemory: how an AI assistant can write, retrieve, correct and forget memories stored in a knowledge graph.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  /* HolobiomicsLab charter (holobiomicslab.cnrs.fr): paper, CNRS blue, yellow accent, IBM Plex */
+  --bg: #fbf7ef; --paper-2: #f3ecdc; --panel: #ffffff; --ink: #16242f; --muted: #5d6a78; --line: #e7e0cc;
+  --cnrs-blue: #00284b; --cnrs-blue-soft: #0d3a66;
+  --llm: #00284b; --llm-soft: #eaf0f6;
+  --vec: #6941eb; --vec-soft: #f1edfd;
+  --kg: #0d3a66; --kg-soft: #eefbe4;
+  --mem: #b8661a; --mem-soft: #fff4e6;
+  --hl: #c9a000; --hl-soft: #fff5a6; --yellow: #ffeb6e;
+  --ok: #2e7d32; --bad: #b42318; --old: #a3a7b0;
+  --radius: 16px;
+  --shadow: 0 8px 30px #00284b0f;
+  --font: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --display: "IBM Plex Serif", Georgia, serif;
+  --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font); font-size: 15px; line-height: 1.45; }
+button { font: inherit; color: inherit; cursor: pointer; }
+
+#app { display: grid; grid-template-rows: auto auto 1fr auto auto; height: 100vh; max-width: 1600px; margin: 0 auto; padding: 12px 16px 8px; gap: 10px; }
+header { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+header h1 { font-family: var(--display); font-size: 22px; font-weight: 600; letter-spacing: -0.01em; color: var(--cnrs-blue); }
+header h1 span { color: var(--muted); font-weight: 450; }
+header .tag { font-size: 13px; color: var(--muted); }
+
+main { display: grid; grid-template-columns: minmax(260px, 1fr) 2.2fr; gap: 12px; min-height: 0; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); min-height: 0; }
+
+/* Chat */
+#chat { display: flex; flex-direction: column; overflow: hidden; }
+#chat .head { padding: 10px 14px; border-bottom: 1px solid var(--line); font-size: 13px; color: var(--muted); display: flex; justify-content: space-between; }
+#msgs { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; scroll-behavior: smooth; }
+.msg { max-width: 88%; padding: 9px 12px; border-radius: 14px; font-size: 15px; }
+.msg .who { display: block; font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 2px; opacity: .75; }
+.msg.user { align-self: flex-end; background: var(--paper-2); border-bottom-right-radius: 4px; }
+.msg.bot { align-self: flex-start; background: var(--llm-soft); border-bottom-left-radius: 4px; }
+.msg.bot .who { color: var(--llm); }
+.sep { align-self: center; font-size: 12px; color: var(--muted); border: 1px dashed var(--line); border-radius: 99px; padding: 3px 12px; }
+.c { border-radius: 4px; padding: 0 2px; transition: background .4s, box-shadow .4s; }
+.c.hl { background-image: linear-gradient(transparent 55%, var(--yellow) 55%); }
+.spectrum { display: block; margin-top: 6px; width: 100%; max-width: 260px; }
+
+/* Scene */
+#stage { position: relative; overflow: hidden; }
+#scene { width: 100%; height: 100%; display: block; }
+#overlay { position: absolute; inset: 0; pointer-events: none; }
+.card { position: absolute; background: rgba(255,255,255,.97); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 12px 40px #00284b1f; padding: 12px 14px; pointer-events: auto; font-size: 14px; }
+.card h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-bottom: 8px; font-weight: 600; }
+.row { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 8px; white-space: nowrap; }
+.row .t { font-family: var(--mono); font-size: 12.5px; }
+.row .rel { color: var(--kg); }
+.row .st { margin-left: auto; font-weight: 700; width: 1.2em; text-align: center; }
+.row.ok .st { color: var(--ok); }
+.row.bad { background: #fdecea; }
+.row.bad .st { color: var(--bad); }
+.row .why { font-size: 12px; color: var(--bad); white-space: normal; }
+.bar { height: 8px; border-radius: 4px; background: var(--vec); width: 0; }
+.score { display: grid; grid-template-columns: 1fr 120px 36px; gap: 8px; align-items: center; padding: 3px 0; font-size: 13.5px; transition: opacity .3s; }
+.score.drop, .rrow.drop { opacity: .35; }
+.rrow { padding: 4px 0; font-size: 13.5px; transition: opacity .3s; }
+.rrow > div { display: flex; align-items: center; gap: 8px; margin-top: 3px; }
+.rrow .n { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.score .n { font-family: var(--mono); font-size: 12px; color: var(--muted); text-align: right; }
+pre.prompt { font-family: var(--mono); font-size: 12.5px; white-space: pre-wrap; line-height: 1.5; }
+pre.prompt .ln { display: block; }
+pre.prompt .k { color: var(--llm); font-weight: 600; }
+pre.prompt .f { color: var(--kg); }
+.recap { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 12px; }
+.recap div { border: 1px solid var(--line); border-radius: 10px; padding: 10px; }
+.recap b { display: block; font-size: 15px; margin-bottom: 2px; }
+.gloss { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; font-size: 13.5px; }
+.gloss dt { font-weight: 600; }
+.gloss dd { color: var(--muted); }
+#fly { position: fixed; inset: 0; pointer-events: none; z-index: 50; }
+.chip { position: absolute; left: 0; top: 0; padding: 3px 10px; border-radius: 99px; background: #fff; border: 1.5px solid var(--hl); font-size: 13px; font-weight: 600; white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+.chip.vec { border-color: var(--vec); color: var(--vec); font-family: var(--mono); font-weight: 500; }
+.chip.kg { border-color: var(--kg); color: var(--kg); }
+.chip.mem { border-color: var(--mem); color: var(--mem); }
+.chip.src { border-color: #9aa0ab; color: var(--muted); }
+.mrow { align-items: flex-start; white-space: normal; }
+.mrow .t { font-family: var(--font); font-size: 13.5px; }
+.mrow .tags { font-size: 12px; color: var(--muted); margin-top: 3px; }
+.tagc { display: inline-block; border: 1px solid var(--kg); color: var(--kg); border-radius: 99px; padding: 0 7px; margin: 1px 2px 0 0; font-size: 11.5px; }
+.mz { background: var(--yellow); border-radius: 4px; padding: 0 3px; }
+#prov { position: fixed; z-index: 60; max-width: 300px; background: var(--cnrs-blue); color: #fff; font-size: 13px; padding: 9px 12px; border-radius: 10px; pointer-events: none; opacity: 0; transition: opacity .15s; }
+#prov b { color: var(--yellow); }
+
+/* SVG */
+svg text { font-family: var(--font); }
+.zone-bg { stroke: var(--line); stroke-width: 1; }
+.zone-title { font-size: 18px; font-weight: 650; }
+.zone-term { font-size: 13.5px; font-weight: 500; fill: var(--muted); }
+.zone-desc { font-size: 13.5px; fill: var(--muted); }
+.pt circle { stroke: #fff; stroke-width: 2; }
+.pt text { font-size: 14.5px; }
+.pt.bg circle { fill: #cfc6ea; } .pt.bg text { fill: #5b6472; font-size: 13px; }
+.pt.on circle { fill: var(--vec); } .pt.on text { fill: var(--ink); font-weight: 550; }
+.pt.q circle { fill: var(--yellow); stroke: var(--hl); stroke-width: 2; }
+.pt.glow circle { stroke: var(--hl); stroke-width: 4; }
+.node rect { fill: var(--kg-soft); stroke: var(--kg); stroke-width: 1.6; }
+.node text { font-size: 15.5px; font-weight: 600; text-anchor: middle; }
+.node text.sub { font-size: 12.5px; font-weight: 450; fill: var(--muted); }
+.node.glow rect { fill: var(--yellow); stroke: var(--hl); stroke-width: 2.5; }
+.node.archived rect { stroke: var(--old); stroke-dasharray: 4 3; }
+.node.mem rect { fill: var(--mem-soft); stroke: var(--mem); }
+.node.mem text.mtitle { font-size: 12px; font-weight: 700; fill: var(--mem); text-anchor: start; text-transform: uppercase; letter-spacing: .04em; }
+.node.mem text.mline { font-size: 13.5px; font-weight: 450; text-anchor: start; }
+.node.src rect { fill: var(--paper-2); stroke: #9aa0ab; stroke-dasharray: 4 3; }
+.node.src text { font-size: 13px; font-weight: 550; fill: var(--muted); }
+.node.old rect { stroke: var(--old); fill: #f4f4f2; }
+.node.old text { fill: #7d838d; }
+.node.old text.mtitle { fill: #7d838d; }
+.node.old rect { stroke-dasharray: 5 3; }
+.edge.faded { opacity: .35; }
+.zone-desc.legend { font-size: 12.5px; fill: #4c5866; }
+.node.archived text { fill: var(--old); }
+.node, .edge { cursor: pointer; }
+.edge path { fill: none; stroke: var(--kg); stroke-width: 1.8; }
+.edge text { font-size: 13px; fill: var(--kg); text-anchor: middle; font-weight: 550; }
+.edge rect { fill: var(--panel); }
+.edge.glow path { stroke: var(--hl); stroke-width: 3.5; }
+.edge.glow text { fill: #8a6d00; }
+.edge.old path { stroke: var(--old); stroke-dasharray: 5 4; }
+.edge.old text { fill: var(--old); text-decoration: line-through; }
+.gate-line { stroke: var(--line); stroke-width: 2; stroke-dasharray: 6 5; }
+.gate-pill { fill: #fff; stroke: var(--muted); }
+.gate.on .gate-pill { stroke: var(--hl); stroke-width: 2; fill: var(--hl-soft); }
+.gate text { font-size: 14px; font-weight: 600; fill: var(--ink); text-anchor: middle; }
+.badge { font-size: 14px; fill: var(--muted); }
+.zone { transition: filter .5s; }
+.zone.dim { filter: saturate(.25) opacity(.5); }
+
+/* Step banner */
+#banner { display: flex; align-items: center; gap: 14px; background: var(--panel); border: 1px solid var(--line); border-left: 6px solid var(--yellow); border-radius: 12px; padding: 8px 16px; box-shadow: var(--shadow); }
+#stepno { flex: none; background: var(--cnrs-blue); color: #fff; font-weight: 700; font-size: 15px; border-radius: 99px; padding: 4px 12px; font-variant-numeric: tabular-nums; }
+#steptitle { font-family: var(--display); font-size: clamp(24px, 2.5vw, 36px); font-weight: 600; line-height: 1.15; color: var(--cnrs-blue); letter-spacing: -0.01em; }
+#stepop { margin-left: auto; flex: none; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--vec); border: 1.5px solid var(--vec); border-radius: 99px; padding: 3px 12px; }
+#stepop:empty { display: none; }
+
+/* Bottom bar */
+#bar { display: grid; grid-template-columns: 1fr auto; gap: 8px 16px; align-items: start; height: 136px; }
+#caption { height: 100%; overflow-y: auto; }
+#caption p { font-size: 15.5px; }
+#caption p.note { color: var(--muted); font-size: 14px; margin-top: 3px; }
+#hood { margin-top: 6px; font-size: 13.5px; }
+#hood summary { cursor: pointer; color: var(--vec); font-weight: 550; }
+#hood pre { margin-top: 6px; background: var(--paper-2); border-radius: 8px; padding: 10px 12px; font-family: var(--mono); font-size: 12.5px; overflow-x: auto; max-height: 30vh; }
+#controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+#controls .keys { width: 100%; text-align: right; font-size: 12.5px; color: var(--muted); }
+#controls button { border: 1px solid var(--line); background: var(--panel); border-radius: 12px; padding: 7px 12px; font-size: 14px; }
+#controls button.primary { background: var(--cnrs-blue); color: #fff; border-color: var(--cnrs-blue); padding: 8px 22px; font-weight: 700; font-size: 18px; }
+#prev { font-size: 18px; padding: 8px 14px !important; }
+#controls button:disabled { opacity: .35; cursor: default; }
+#speed button { padding: 5px 8px; font-size: 13px; border-radius: 8px; }
+#speed button.on { background: var(--cnrs-blue); color: #fff; border-color: var(--cnrs-blue); }
+#dots { display: flex; gap: 6px; }
+#dots button { width: 11px; height: 11px; padding: 0; border-radius: 50%; background: var(--line); border: none; }
+#dots button.on { background: var(--cnrs-blue); }
+#dots button.done { background: #c9bf9f; }
+footer { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 8px; }
+footer .logos { display: flex; align-items: center; gap: 16px; }
+footer img { height: 26px; width: auto; display: block; }
+footer a { color: var(--vec); }
+:focus-visible { outline: 3px solid var(--vec); outline-offset: 2px; }
+footer .spacer { flex: 1; }
+
+@media (max-height: 820px) and (min-width: 901px) {
+  header .tag, footer > span:last-child { display: none; }
+  #bar { height: 112px; }
+  #steptitle { font-size: 26px; }
+  #app { gap: 8px; padding-top: 8px; }
+}
+@media (pointer: coarse) {
+  #controls button { min-height: 44px; min-width: 44px; }
+  #dots button { width: 26px; height: 26px; padding: 7px; background-clip: content-box; }
+}
+@media (max-width: 900px) {
+  #app { height: auto; min-height: 100vh; padding-bottom: 84px; }
+  header .tag { display: none; }
+  #banner { position: sticky; top: 0; z-index: 30; padding: 6px 12px; }
+  #steptitle { font-size: 22px; }
+  #stepop { display: none; }
+  #controls { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; max-width: none; justify-content: center; background: var(--bg); padding: 10px 12px; box-shadow: 0 -6px 20px #00284b14; }
+  #controls .keys, #speed { display: none; }
+  main { grid-template-columns: 1fr; }
+  #chat { height: 30vh; min-height: 200px; }
+  #stage { height: auto; }
+  #scene { height: auto; }
+  #bar { grid-template-columns: 1fr; height: auto; }
+  #caption { height: auto; }
+  .recap { grid-template-columns: 1fr 1fr; }
+  footer img { height: 20px; }
+}
+@media (prefers-reduced-motion: reduce) { #msgs { scroll-behavior: auto; } }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>KGmemory, explained <span>· how an AI assistant can remember</span></h1>
+    <span class="tag">A guided story in 8 steps, about 3 minutes.</span>
+  </header>
+
+  <section id="banner" aria-live="polite">
+    <span id="stepno"></span><h2 id="steptitle"></h2><span id="stepop" title="Memory operation"></span>
+  </section>
+
+  <main>
+    <section id="chat" class="panel" aria-label="Conversation">
+      <div class="head"><span>Conversation</span><span id="session">Session 1</span></div>
+      <div id="msgs" aria-live="polite"></div>
+    </section>
+    <section id="stage" class="panel" aria-label="Inside the memory">
+      <svg id="scene" role="img" aria-label="Animated view of the assistant and its memory"></svg>
+      <div id="overlay"></div>
+    </section>
+  </main>
+
+  <section id="bar">
+    <div id="caption">
+      <p id="steptext"></p>
+      <p class="note" id="stepnote"></p>
+      <details id="hood"><summary>Under the hood</summary><pre id="hoodcode"></pre></details>
+    </div>
+    <div id="controls">
+      <div id="speed" role="group" aria-label="Animation speed">
+        <button data-s="0.5">0.5×</button><button data-s="1" class="on">1×</button><button data-s="2">2×</button>
+      </div>
+      <button id="replay" title="Replay this step">↻ Replay step</button>
+      <button id="prev" aria-label="Previous step">‹</button>
+      <div id="dots"></div>
+      <button id="next" class="primary" aria-label="Next step">›</button>
+      <span class="keys">Keyboard: ← → to move between steps</span>
+    </div>
+  </section>
+
+  <footer>
+    <div class="logos">
+      <img src="assets/inria.png" alt="Inria">
+      <img src="assets/cnrs.png" alt="CNRS">
+      <img src="assets/uca.png" alt="Université Côte d'Azur">
+      <img src="assets/wimmics.png" alt="Wimmics">
+      <img src="assets/holobiomicslab.png" alt="HolobiomicsLab">
+    </div>
+    <span class="spacer"></span>
+    <span>Paper: <a href="https://hal.science/hal-05747244" target="_blank" rel="noopener">Knowledge Graphs as External Memory for LLM-based Scientific Assistants</a> (B. Navet)</span>
+    <span>Illustrative example: the organism and chemistry are real; the measurements are made up for the demo. Static replay, no live model.</span>
+  </footer>
+</div>
+<div id="fly"></div>
+<div id="prov"></div>
+
+<script>
+"use strict";
+const NS = "http://www.w3.org/2000/svg";
+const $ = (s, r = document) => r.querySelector(s);
+
+/* ---------- Timing, cancellation ---------- */
+let speed = 1, instant = false, runId = 0;
+class Cancelled extends Error {}
+const T = ms => (instant ? 0 : ms / speed);
+function check(id) { if (id !== runId) throw new Cancelled(); }
+async function wait(ms) { const id = runId; if (!instant) await new Promise(r => setTimeout(r, ms / speed)); check(id); }
+async function anim(el, keyframes, { duration = 500, delay = 0, easing = "cubic-bezier(.4,0,.2,1)" } = {}) {
+  const id = runId;
+  const a = el.animate(keyframes, { duration: T(duration), delay: T(delay), easing, fill: "forwards" });
+  try { await a.finished; } catch (e) { /* cancelled */ }
+  check(id);
+  try { a.commitStyles(); a.cancel(); } catch (e) { /* element detached */ }
+  return a;
+}
+const show = (el, o = {}) => anim(el, [{ opacity: 0 }, { opacity: 1 }], { duration: 400, ...o });
+const hide = (el, o = {}) => anim(el, [{ opacity: 1 }, { opacity: 0 }], { duration: 400, ...o });
+const pop = (el, o = {}) => anim(el, [{ opacity: 0, transform: "scale(.4)" }, { opacity: 1, transform: "scale(1.15)", offset: .7 }, { opacity: 1, transform: "scale(1)" }], { duration: 520, ...o });
+
+/* ---------- SVG helpers ---------- */
+function svg(tag, attrs = {}, parent) {
+  const el = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  if (parent) parent.appendChild(el);
+  return el;
+}
+function txt(parent, x, y, s, cls, extra = {}) { const t = svg("text", { x, y, class: cls || "", ...extra }, parent); t.textContent = s; return t; }
+const center = el => { const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; };
+
+/* ---------- Layouts (zone placement only; zone contents use local coordinates) ---------- */
+const LAYOUTS = {
+  wide: { vb: [1000, 640], llm: { x: 10, y: 8, w: 980 }, gate: { x: 10, y: 140, w: 980 }, vec: { x: 10, y: 190 }, kg: { x: 405, y: 190 } },
+  tall: { vb: [600, 1080], llm: { x: 10, y: 8, w: 580 }, gate: { x: 10, y: 140, w: 580 }, vec: { x: 107, y: 188 }, kg: { x: 8, y: 636 } },
+};
+const VEC_W = 385, KG_W = 585, MAP_H = 440;
+
+const VEC_BG = [
+  ["coral", 155, 100], ["jellyfish", 40, 205], ["temperature", 30, 412], ["salinity", 205, 225],
+  ["amino acid", 315, 175], ["osmolyte", 330, 310], ["chromatography", 285, 425],
+];
+const VEC_PTS = {
+  anemone: { label: "sea anemone", x: 92, y: 118 },
+  heat: { label: "heat stress", x: 100, y: 318 },
+  valine: { label: "valine", x: 270, y: 132 },
+  betaine: { label: "glycine betaine", x: 262, y: 272 },
+  column: { label: "C18 column", x: 228, y: 392 },
+};
+/* Concept map content follows the real KGmemory model: memories (mem:SemanticMemory, text in
+   mem:content) point to SKOS concepts (dcterms:subject) and to the write activity that produced them
+   (prov:wasGeneratedBy, inverse of the activity's prov:generated); an offline revision pass links a
+   newer memory to the one it replaces with mem:supersedes. Alignments: DBpedia / Wikidata. */
+const NODES = {
+  s1: { kind: "src", label: "Chat · session 1", x: 120, y: 88 },
+  s2: { kind: "src", label: "Chat · session 2", x: 480, y: 88 },
+  m1: { kind: "mem", label: "Memory 1", lines: ["Peak m/z 118.086 in", "Exaiptasia = valine;", "higher under heat", "stress."], x: 112, y: 192 },
+  m2: { kind: "mem", label: "Memory 2", lines: ["C18 column", "swapped Monday."], x: 292, y: 192 },
+  m3: { kind: "mem", label: "Memory 3", lines: ["Peak m/z 118.086 is", "glycine betaine", "(reference standard),", "not valine."], x: 478, y: 192 },
+  exa: { kind: "concept", label: "Exaiptasia", sub: "≡ Wikidata", x: 78, y: 350 },
+  heat: { kind: "concept", label: "heat stress", x: 200, y: 404 },
+  valine: { kind: "concept", label: "valine", sub: "≡ Wikidata", x: 318, y: 350 },
+  column: { kind: "concept", label: "C18 column", x: 320, y: 272 },
+  betaine: { kind: "concept", label: "glycine betaine", sub: "≡ Wikidata", x: 478, y: 404 },
+};
+// [from, to, label, options]  label position t along the edge; via = quadratic control point
+const EDGES = {
+  d1: ["m1", "s1", "came from", { t: .45 }],
+  d2: ["m2", "s1", "came from", { t: .45 }],
+  a1: ["m1", "exa", "about", { t: .55 }],
+  a2: ["m1", "heat", "about", { t: .55 }],
+  a3: ["m1", "valine", "about", { t: .55 }],
+  a4: ["m2", "column", "about", { t: .55 }],
+  d3: ["m3", "s2", "came from", { t: .5 }],
+  a5: ["m3", "betaine", "about", { t: .55 }],
+  a6: ["m3", "valine", "about", { t: .3 }],
+  sup: ["m3", "m1", "supersedes", { t: .5, via: [295, 108] }],
+};
+const PRED = { "came from": "prov:wasGeneratedBy", about: "dcterms:subject", supersedes: "mem:supersedes" };
+const S1 = { by: "Researcher", when: "Session 1 · day 1", msg: "“Ran LC-MS on our Exaiptasia anemones…”", op: "Consolidation (write)" };
+const S2 = { by: "Researcher", when: "Session 2 · day 4", msg: "“The reference standard says it's glycine betaine…”", op: "Consolidation (write)" };
+const PROV = {
+  "node:m1": S1, "node:m2": S1, "node:m3": { ...S2, extra: "A later revision pass marked it as superseding Memory 1, which is kept as history." },
+  "node:s1": { by: "Researcher", when: "Session 1 · day 1", msg: "The write activity for this chat turn", op: "prov:Activity" },
+  "node:s2": { by: "Researcher", when: "Session 2 · day 4", msg: "The write activity for this chat turn", op: "prov:Activity" },
+  "node:exa": { ...S1, extra: "Aligned to its Wikidata entry (skos:exactMatch)." },
+  "node:heat": S1, "node:column": S1,
+  "node:valine": { ...S1, extra: "Aligned to its Wikidata entry (skos:exactMatch)." },
+  "node:betaine": { ...S2, extra: "Aligned to its Wikidata entry (skos:exactMatch)." },
+};
+for (const [k, [a, , label]] of Object.entries(EDGES)) PROV[`edge:${k}`] = { ...(PROV[`node:${a}`] || S1), op: `${label} = ${PRED[label]}`, extra: undefined };
+PROV["edge:sup"] = { by: "Revision pass (background)", when: "After session 2", msg: "Memory 1 and Memory 3 share the concept “valine”; the model judged that the newer one replaces the older.", op: "Updating · supersedes = mem:supersedes" };
+
+/* ---------- Scene ---------- */
+const scene = $("#scene"), overlay = $("#overlay"), fly = $("#fly");
+let Z = {}, nodes = {}, edges = {}, pts = {};
+
+function zone(parent, { x, y, w, h, fill, title, term, desc }) {
+  const g = svg("g", { transform: `translate(${x},${y})`, class: "zone" }, parent);
+  svg("rect", { x: 0, y: 0, width: w, height: h, rx: 12, fill, class: "zone-bg" }, g);
+  const t = txt(g, 16, 26, title, "zone-title");
+  const ts = svg("tspan", { class: "zone-term", dx: 8 }, t); ts.textContent = term;
+  txt(g, 16, 45, desc, "zone-desc");
+  return g;
+}
+
+function buildScene(layoutName) {
+  const L = LAYOUTS[layoutName];
+  scene.innerHTML = ""; overlay.innerHTML = ""; fly.innerHTML = "";
+  nodes = {}; edges = {}; pts = {};
+  scene.setAttribute("viewBox", `0 0 ${L.vb[0]} ${L.vb[1]}`);
+  const defs = svg("defs", {}, scene);
+  for (const [id, color] of [["arr", "#0d3a66"], ["arr-glow", "#c9a000"], ["arr-old", "#a3a7b0"]]) {
+    const m = svg("marker", { id, viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 12, markerHeight: 12, markerUnits: "userSpaceOnUse", orient: "auto-start-reverse" }, defs);
+    svg("path", { d: "M0,0 L10,5 L0,10 z", fill: color }, m);
+  }
+  // Assistant
+  Z.llm = zone(scene, { ...L.llm, h: 120, fill: "#f3f6fa", title: "Assistant", term: "large language model (LLM)", desc: "Writes fluent answers, but forgets everything when a conversation ends." });
+  Z.llm.querySelector(".zone-title").setAttribute("x", 96);
+  Z.llm.querySelector(".zone-desc").setAttribute("x", 96);
+  const brain = svg("g", { transform: "translate(50,62)", id: "brain" }, Z.llm);
+  svg("circle", { r: 32, fill: "#00284b" }, brain);
+  txt(brain, 0, 6, "LLM", "", { "text-anchor": "middle", fill: "#fff", "font-weight": 700, "font-size": 16 });
+  Z.badge = txt(Z.llm, 96, 92, "Long-term memory: empty", "badge", { "text-anchor": "start" });
+  Z.ctx = txt(Z.llm, 96, 110, "", "badge", { "text-anchor": "start" });
+  // Gate
+  Z.gate = svg("g", { transform: `translate(${L.gate.x},${L.gate.y})`, class: "gate zone" }, scene);
+  svg("line", { x1: 0, y1: 20, x2: L.gate.w, y2: 20, class: "gate-line" }, Z.gate);
+  svg("rect", { x: L.gate.w / 2 - 160, y: 5, width: 320, height: 30, rx: 15, class: "gate-pill" }, Z.gate);
+  txt(Z.gate, L.gate.w / 2, 25, "✓ Quality check — SHACL rules", "");
+  // Similarity map
+  Z.vec = zone(scene, { ...L.vec, w: VEC_W, h: MAP_H, fill: "#f7f5fd", title: "Similarity map", term: "vector database", desc: "Similar meanings sit close together." });
+  for (const [label, x, y] of VEC_BG) addPoint(null, { label, x, y }, "bg");
+  // Concept map
+  Z.kg = zone(scene, { ...L.kg, w: KG_W, h: MAP_H, fill: "#f6faf2", title: "Concept map", term: "knowledge graph", desc: "Memories point to their concepts and to where they came from." });
+  txt(Z.kg, 16, 64, "Links: about · came from · supersedes  ·  ≡ same entry in Wikidata", "zone-desc legend");
+  Z.archive = svg("g", { opacity: 0 }, Z.kg);
+  svg("rect", { x: 282, y: 382, width: 110, height: 54, rx: 10, fill: "#f0efeb", stroke: "#a9a598", "stroke-dasharray": "5 3" }, Z.archive);
+  txt(Z.archive, 337, 398, "ARCHIVE · kept", "", { "text-anchor": "middle", "font-size": 12, "font-weight": 700, fill: "#5b6472", "letter-spacing": ".04em" });
+  Z.edgeLayer = svg("g", {}, Z.kg);
+  Z.nodeLayer = svg("g", {}, Z.kg);
+  Z.vecLayer = svg("g", {}, Z.vec);
+  Z.links = svg("g", {}, scene);
+}
+
+function addPoint(key, { label, x, y, below }, cls = "on") {
+  const outer = svg("g", { transform: `translate(${x},${y})` }, key ? Z.vecLayer : Z.vec);
+  const g = svg("g", { class: `pt ${cls}` }, outer);
+  svg("circle", { r: cls === "bg" ? 4.5 : 7 }, g);
+  const tooWide = x + 12 + label.length * 7.6 > VEC_W - 8;
+  if (below) txt(g, 0, 23, label, "", { "text-anchor": "middle" });
+  else if (tooWide) txt(g, -11, 5, label, "", { "text-anchor": "end" });
+  else txt(g, 11, 5, label);
+  g.style.transformBox = "fill-box"; g.style.transformOrigin = "center";
+  if (key) pts[key] = g;
+  return g;
+}
+
+function nodeSize(n) {
+  if (n.kind === "mem") return { w: Math.max(...n.lines.map(l => l.length)) * 7.4 + 22, h: 26 + n.lines.length * 16 + 4 };
+  if (n.kind === "src") return { w: n.label.length * 7.4 + 22, h: 26 };
+  return { w: Math.max(n.label.length * 8.8, (n.sub || "").length * 7) + 26, h: n.sub ? 46 : 32 };
+}
+function addNode(key) {
+  const n = NODES[key], { w, h } = nodeSize(n);
+  const outer = svg("g", { transform: `translate(${n.x},${n.y})` }, Z.nodeLayer);
+  const g = svg("g", { class: `node ${n.kind}`, "data-prov": `node:${key}` }, outer);
+  svg("rect", { x: -w / 2, y: -h / 2, width: w, height: h, rx: n.kind === "concept" ? h / 2 : n.kind === "src" ? 6 : 8 }, g);
+  if (n.kind === "mem") {
+    txt(g, -w / 2 + 10, -h / 2 + 17, n.label, "mtitle");
+    n.lines.forEach((l, i) => txt(g, -w / 2 + 10, -h / 2 + 35 + i * 16, l, "mline"));
+  } else {
+    txt(g, 0, n.sub ? -3 : n.kind === "src" ? 4 : 5, n.label);
+    if (n.sub) txt(g, 0, 14, n.sub, "sub");
+  }
+  g.style.transformBox = "fill-box"; g.style.transformOrigin = "center";
+  nodes[key] = g;
+  return g;
+}
+// Point where the segment from node a's centre toward (tx, ty) leaves a's box
+function border(a, tx, ty) {
+  const sa = nodeSize(NODES[a]), A = NODES[a];
+  const dx = tx - A.x, dy = ty - A.y;
+  const s = Math.min((sa.w / 2 + 4) / Math.abs(dx || 1e-6), (sa.h / 2 + 4) / Math.abs(dy || 1e-6));
+  return { x: A.x + dx * s, y: A.y + dy * s };
+}
+function addEdge(key) {
+  const [a, b, label, { t = .5, via } = {}] = EDGES[key];
+  const A = NODES[a], B = NODES[b];
+  const c = via ? { x: via[0], y: via[1] } : null;
+  const p = c ? border(a, c.x, c.y) : border(a, B.x, B.y), q = c ? border(b, c.x, c.y) : border(b, A.x, A.y);
+  const g = svg("g", { class: "edge", "data-prov": `edge:${key}` }, Z.edgeLayer);
+  svg("path", { d: c ? `M${p.x},${p.y} Q${c.x},${c.y} ${q.x},${q.y}` : `M${p.x},${p.y} L${q.x},${q.y}`, "marker-end": "url(#arr)" }, g);
+  const u = 1 - t;
+  const mx = c ? u * u * p.x + 2 * u * t * c.x + t * t * q.x : p.x + (q.x - p.x) * t;
+  const my = c ? u * u * p.y + 2 * u * t * c.y + t * t * q.y : p.y + (q.y - p.y) * t;
+  const lw = label.length * 7 + 10;
+  svg("rect", { x: mx - lw / 2, y: my - 9, width: lw, height: 18, rx: 5 }, g);
+  txt(g, mx, my + 4, label);
+  edges[key] = g;
+  return g;
+}
+async function drawEdge(key) {
+  const g = addEdge(key), path = g.querySelector("path"), len = path.getTotalLength();
+  const label = [...g.querySelectorAll("rect, text")];
+  label.forEach(e => (e.style.opacity = 0));
+  path.style.strokeDasharray = len; path.style.strokeDashoffset = len;
+  await anim(path, [{ strokeDashoffset: len }, { strokeDashoffset: 0 }], { duration: 600 });
+  path.style.strokeDasharray = ""; path.style.strokeDashoffset = "";
+  await Promise.all(label.map(e => show(e, { duration: 250 })));
+}
+function setGlow(el, on) { el.classList.toggle("glow", on); const p = el.querySelector("path"); if (p) p.setAttribute("marker-end", on ? "url(#arr-glow)" : "url(#arr)"); }
+
+/* ---------- Flying chips ---------- */
+async function flyChip(label, from, to, cls = "", { duration = 900, morph } = {}) {
+  if (instant) return;
+  const c = document.createElement("div");
+  c.className = `chip ${cls}`; c.textContent = label; fly.appendChild(c);
+  const a = typeof from.getBoundingClientRect === "function" ? center(from) : from;
+  const b = typeof to.getBoundingClientRect === "function" ? center(to) : to;
+  const w = c.offsetWidth, h = c.offsetHeight;
+  const tf = (p, s = 1) => `translate(${p.x - w / 2}px, ${p.y - h / 2}px) scale(${s})`;
+  const mid = { x: (a.x + b.x) / 2, y: Math.min(a.y, b.y) - 40 };
+  if (morph) setTimeout(() => { c.textContent = morph; c.classList.add("vec"); }, T(duration) * 0.45);
+  try {
+    await anim(c, [{ transform: tf(a, .8), opacity: 0 }, { transform: tf(a), opacity: 1, offset: .1 }, { transform: tf(mid, 1.05), offset: .55 }, { transform: tf(b, .7), opacity: .9 }], { duration, easing: "cubic-bezier(.45,.05,.35,1)" });
+  } finally { c.remove(); }
+}
+
+/* ---------- Chat ---------- */
+const msgs = $("#msgs");
+async function say(role, html, { extra } = {}) {
+  const m = document.createElement("div");
+  if (role === "sep") { m.className = "sep"; m.textContent = html; }
+  else { m.className = `msg ${role}`; m.innerHTML = `<span class="who">${role === "user" ? "Researcher" : "Assistant"}</span>${html}`; }
+  if (extra) m.appendChild(extra);
+  msgs.appendChild(m);
+  msgs.scrollTop = msgs.scrollHeight;
+  await anim(m, [{ opacity: 0, transform: "translateY(8px)" }, { opacity: 1, transform: "none" }], { duration: 380 });
+  await wait(role === "user" ? 700 : 500);
+  return m;
+}
+async function highlight(m, keys, gap = 260) {
+  for (const k of keys) { m.querySelector(`[data-c="${k}"]`).classList.add("hl"); await wait(gap); }
+}
+const span = (m, k) => m.querySelector(`[data-c="${k}"]`);
+function spectrum() {
+  const s = document.createElementNS(NS, "svg");
+  s.setAttribute("viewBox", "0 0 260 90"); s.setAttribute("class", "spectrum");
+  svg("line", { x1: 10, y1: 72, x2: 250, y2: 72, stroke: "#9aa0ab" }, s);
+  const peaks = [[40, 14], [70, 22], [98, 10], [130, 58], [165, 18], [200, 26], [228, 9]];
+  for (const [x, h] of peaks) svg("rect", { x: x - 2, y: 72 - h, width: 4, height: h, fill: x === 130 ? "#c9a000" : "#b9bec8", class: "spk" }, s);
+  txt(s, 130, 10, "m/z 118.086", "", { "text-anchor": "middle", "font-size": 11, "font-weight": 700, fill: "#c9a000" });
+  txt(s, 130, 86, "mass-to-charge ratio (m/z) →", "", { "text-anchor": "middle", "font-size": 9.5, fill: "#687082" });
+  return s;
+}
+
+/* ---------- Overlay cards ---------- */
+function card(html, style) {
+  const c = document.createElement("div");
+  c.className = "card"; c.innerHTML = html; Object.assign(c.style, style);
+  overlay.appendChild(c);
+  return c;
+}
+function placeOver(zoneEl, { dx = 0, dy = 0, w } = {}) {
+  const sr = $("#stage").getBoundingClientRect(), zr = zoneEl.getBoundingClientRect();
+  const style = { left: `${Math.max(8, zr.left - sr.left + dx)}px`, top: `${Math.max(8, zr.top - sr.top + dy)}px` };
+  if (w) style.width = `${Math.min(w, sr.right - Math.max(sr.left + 8, zr.left + dx) - 8)}px`;
+  return style;
+}
+
+/* ---------- Steps ---------- */
+const pulseBrain = () => anim($("#brain"), [{ transform: "translate(50px,62px) scale(1)" }, { transform: "translate(50px,62px) scale(1.12)" }, { transform: "translate(50px,62px) scale(1)" }], { duration: 480 });
+async function addNodeAnimated(key, from, cls = "kg") {
+  const n = addNode(key); n.style.opacity = 0;
+  await flyChip(NODES[key].label, from, n, cls, { duration: 750 });
+  await pop(n, { duration: 400 });
+  return n;
+}
+const STEPS = [
+  {
+    title: "The problem",
+    op: "",
+    focus: null,
+    text: "On its own, an AI assistant forgets everything when a conversation ends.",
+    note: "KGmemory gives it a long-term memory kept outside the model, loosely inspired by human memory: a similarity map to find things by meaning, and a concept map whose memories can be traced, checked and corrected.",
+    hood: "Without memory, each request to the model contains only the system prompt and the current conversation.\nNothing from previous sessions reaches the model. Pasting the whole history back in does not scale: it becomes long, costly and noisy.",
+    async run() {
+      for (const z of [Z.llm, Z.gate, Z.vec, Z.kg]) z.style.opacity = 0;
+      await say("user", "Hi! Can you remind me what we found in last week's anemone samples?");
+      await say("bot", "Sorry, I don't have any memory of previous conversations.");
+      await show(Z.llm);
+      await wait(300);
+      await Promise.all([show(Z.vec, { duration: 600 }), show(Z.kg, { duration: 600, delay: 250 })]);
+      await show(Z.gate, { duration: 400 });
+      await wait(800);
+    },
+  },
+  {
+    title: "Writing a memory: extract and check",
+    op: "Consolidation",
+    focus: ["llm", "gate"],
+    text: "The researcher shares a result. After replying, the assistant picks out the key concepts and drafts short memories, each tagged with the concepts it is about.",
+    note: "Before anything is stored, every memory must pass quality rules (SHACL shapes). A draft that breaks a rule goes back to the extraction model with the error, at most twice. The rules check a memory's shape, not its truth; the rule shown is illustrative.",
+    hood: `# Draft memories from the extraction model (KGmemory vocabulary, simplified)
+_:m1 a mem:SemanticMemory ;
+    mem:content "Peak m/z 118.086 in Exaiptasia = valine; higher under heat stress." ;
+    dcterms:subject ex:Exaiptasia , ex:heatStress , ex:valine ;
+    ex:measuredMz "118.086"^^xsd:decimal .      # missing in the first draft
+_:m2 a mem:EpisodicMemory ;
+    mem:content "C18 column swapped Monday." ;
+    dcterms:subject ex:C18column .
+
+# Illustrative domain rule. KGmemory ships structural shapes (mem:MemoryEntityShape:
+# one tier, one creation date, one text, importance in [0,1], disjoint memory types…)
+ex:MeasurementShape a sh:NodeShape ;
+    sh:targetSubjectsOf ex:annotatedPeak ;
+    sh:property [ sh:path ex:measuredMz ; sh:minCount 1 ; sh:datatype xsd:decimal ] .
+
+# On a violation, the SHACL report goes back to the extraction model (max 2 retries).`,
+    async run() {
+      $("#session").textContent = "Session 1";
+      msgs.innerHTML = "";
+      const sp = spectrum();
+      const m = await say("user", `Ran LC-MS on our <span class="c" data-c="exa"><i>Exaiptasia</i> anemones</span>. A peak at <span class="c" data-c="mz">m/z 118.086</span> ([M+H]⁺) looks like <span class="c" data-c="valine">valine</span>, higher in the <span class="c" data-c="heat">heat-stressed</span> animals. (Note: <span class="c" data-c="column">C18 column</span> swapped Monday.)`, { extra: sp });
+      sp.querySelectorAll(".spk").forEach(r => { r.style.transformBox = "fill-box"; r.style.transformOrigin = "bottom"; });
+      for (const r of sp.querySelectorAll(".spk")) anim(r, [{ transform: "scaleY(0)" }, { transform: "scaleY(1)" }], { duration: 500 }).catch(() => {});
+      await say("bot", "Noted. A reference standard would confirm the annotation.");
+      await highlight(m, ["exa", "valine", "heat", "column"]);
+      await Promise.all(["exa", "valine", "heat", "column"].map((k, i) => wait(i * 120).then(() => flyChip(span(m, k).textContent, span(m, k), $("#brain")))));
+      await pulseBrain();
+      const tag = s => `<span class="tagc">${s}</span>`;
+      const c = card(`<h3>Draft memories · written after the reply</h3>
+        <div class="row mrow" data-r="m1"><div class="t"><b>Memory 1</b> “Peak <span class="mz">m/z ?</span> in Exaiptasia = valine; higher under heat stress.”<div class="tags">about: ${tag("Exaiptasia")} ${tag("heat stress")} ${tag("valine")}</div></div><span class="st"></span></div>
+        <div class="row mrow" data-r="m2"><div class="t"><b>Memory 2</b> “C18 column swapped Monday.”<div class="tags">about: ${tag("C18 column")}</div></div><span class="st"></span></div>`,
+        placeOver(Z.llm, { dx: Z.llm.getBoundingClientRect().width > 700 ? 450 : 16, dy: 34, w: 420 }));
+      c.id = "factcard";
+      for (const r of c.querySelectorAll(".row")) await show(r, { duration: 250 });
+      await wait(500);
+      Z.gate.classList.add("on");
+      const r1 = c.querySelector('[data-r="m1"]'), r2 = c.querySelector('[data-r="m2"]');
+      await wait(350);
+      r1.classList.add("bad"); r1.querySelector(".st").textContent = "✗";
+      await wait(280);
+      r2.classList.add("ok"); r2.querySelector(".st").textContent = "✓";
+      const why = document.createElement("div"); why.className = "why"; why.textContent = "Rule broken: a peak needs its measured m/z.";
+      r1.after(why);
+      await anim(r1, [{ transform: "translateX(0)" }, { transform: "translateX(-8px)" }, { transform: "translateX(8px)" }, { transform: "translateX(0)" }], { duration: 360 });
+      await wait(1000);
+      why.textContent = "Sent back to the extraction model with the error (retry 1 of 2)…";
+      await flyChip("rule report", Z.gate, $("#brain"), "", { duration: 800 });
+      Z.gate.classList.remove("on");
+      await pulseBrain();
+      span(m, "mz").classList.add("hl");
+      await wait(400);
+      await flyChip("m/z 118.086", span(m, "mz"), r1.querySelector(".mz"));
+      Z.gate.classList.add("on");
+      r1.querySelector(".mz").textContent = "m/z 118.086";
+      r1.classList.remove("bad"); r1.classList.add("ok"); r1.querySelector(".st").textContent = "✓";
+      why.remove();
+      await wait(700);
+      Z.gate.classList.remove("on");
+      await wait(600);
+    },
+  },
+  {
+    title: "Writing a memory: store",
+    op: "Indexing",
+    focus: ["vec", "kg"],
+    text: "Accepted memories are stored. Their concepts go on the similarity map; on the concept map, each memory points to the concepts it is about and to the conversation it came from.",
+    note: "On the map, each concept becomes a list of numbers (an “embedding”): similar meanings get similar numbers, so they land close together. Each memory's text is embedded too. In the graph, concepts are aligned with public knowledge bases (≡ the same entry in Wikidata or DBpedia).",
+    hood: `# Indexing: concept labels and memory texts are embedded (two vector collections)
+"sea anemone"  → [ 0.12, -0.80,  0.33, … ]   (384 numbers)
+
+# Consolidation: memories, concepts and provenance are written to the graph
+<urn:uuid:…m1> a mem:SemanticMemory ;
+    mem:storedIn mem:LongTermStore ;
+    mem:hasState mem:Active ;
+    mem:content "Peak m/z 118.086 in Exaiptasia = valine; higher under heat stress." ;
+    dcterms:subject ex:Exaiptasia , ex:heatStress , ex:valine ;
+    mem:importance 0.8 .
+ex:write-session-1 a prov:Activity ;            # one activity per write
+    prov:generated <urn:uuid:…m1> , <urn:uuid:…m2> ;
+    prov:startedAtTime "…"^^xsd:dateTime .
+ex:valine a skos:Concept ; skos:prefLabel "valine"@en ; skos:exactMatch wd:… .`,
+    async run() {
+      const c = $("#factcard");
+      const rowEl = id => (c && c.querySelector(`[data-r="${id}"]`)) || Z.llm;
+      for (const [k, vec] of [["anemone", "[0.12, −0.80, …]"], ["heat", "[−0.41, 0.07, …]"], ["valine", "[0.66, 0.21, …]"], ["column", "[0.05, 0.93, …]"]]) {
+        const p = addPoint(k, VEC_PTS[k]); p.style.opacity = 0;
+        await flyChip(VEC_PTS[k].label, rowEl(k === "column" ? "m2" : "m1"), p, "", { morph: vec, duration: 950 });
+        await pop(p, { duration: 400 });
+      }
+      await wait(250);
+      await addNodeAnimated("s1", msgs.firstElementChild || Z.llm, "src");
+      await addNodeAnimated("m1", rowEl("m1"), "mem");
+      await drawEdge("d1");
+      for (const [k, e] of [["exa", "a1"], ["heat", "a2"], ["valine", "a3"]]) { await addNodeAnimated(k, rowEl("m1")); await drawEdge(e); }
+      await addNodeAnimated("m2", rowEl("m2"), "mem");
+      await drawEdge("d2");
+      await addNodeAnimated("column", rowEl("m2"));
+      await drawEdge("a4");
+      if (c) { await hide(c, { duration: 300 }); c.remove(); }
+      Z.badge.textContent = "Long-term memory: 2 memories · 4 concepts";
+      await anim(Z.badge, [{ opacity: .2 }, { opacity: 1 }], { duration: 500 });
+      await wait(800);
+    },
+  },
+  {
+    title: "A new conversation",
+    op: "",
+    focus: null,
+    text: "Three days later, the researcher opens a new chat. The conversation is gone, but the memory is still there.",
+    note: "The chat window is short-term memory; KGmemory is long-term memory, kept in databases outside the model.",
+    hood: "The graph lives in an RDF triple store (Apache Jena Fuseki) and the embeddings in a vector database (Qdrant).\nBoth survive the end of a session; the chat history does not.",
+    async run() {
+      for (const m of [...msgs.children]) anim(m, [{ opacity: 1 }, { opacity: 0 }], { duration: 400 }).catch(() => {});
+      await wait(450);
+      msgs.innerHTML = "";
+      $("#session").textContent = "Session 2 · three days later";
+      await say("sep", "New session · three days later");
+      await Promise.all([Z.vec, Z.kg].map(z => anim(z, [{ opacity: 1 }, { opacity: .45 }, { opacity: 1 }], { duration: 1000 })));
+      await anim(Z.badge, [{ opacity: 1 }, { opacity: .3 }, { opacity: 1 }], { duration: 900 });
+      await wait(1500);
+    },
+  },
+  {
+    title: "Retrieving memories",
+    op: "Retrieval",
+    focus: ["llm", "vec", "kg"],
+    text: "The researcher asks a question. Its concepts are looked up on the similarity map, then the assistant follows the “about” links to the memories that mention them, and adds the best ones to its prompt.",
+    note: "“heat-stressed” is not stored word for word, but it lands next to “heat stress” on the map. Memories are ranked by importance, recency and how often they are used. No language model is called in this step: only lookups and one graph query, so the prompt stays small.",
+    hood: `# 1. Similarity map: "heat-stressed" → ex:heatStress, "anemones" → ex:Exaiptasia
+# 2. Concept map: memories about those concepts, or about concepts up to 2 links away
+CONSTRUCT { … } WHERE {
+  VALUES ?topic { ex:heatStress ex:Exaiptasia }
+  ?topic (skos:broader|^skos:broader|skos:related|^skos:related)?
+        /(skos:broader|^skos:broader|skos:related|^skos:related)? ?subject .
+  ?memory dcterms:subject ?subject ; mem:content ?content ;
+          mem:hasState mem:Active .
+}
+# In parallel, the question's text is compared with memory texts (vector search).
+# 3. Rank by salience = importance × recency × frequency; keep the top k
+# 4. Render a Markdown block; the host wraps it in <kgmemory> before the question`,
+    async run() {
+      const m = await say("user", `What did we find in the <span class="c" data-c="heat">heat-stressed</span> <span class="c" data-c="exa">anemones</span>?`);
+      await highlight(m, ["heat", "exa"], 350);
+      const q1 = addPoint("q1", { label: "“heat-stressed”", x: 128, y: 344, below: true }, "q"); q1.style.opacity = 0;
+      const q2 = addPoint("q2", { label: "“anemones”", x: 70, y: 146, below: true }, "q"); q2.style.opacity = 0;
+      await Promise.all([
+        flyChip("heat-stressed", span(m, "heat"), q1, "", { morph: "[−0.38, 0.11, …]", duration: 1000 }),
+        wait(150).then(() => flyChip("anemones", span(m, "exa"), q2, "", { morph: "[0.15, −0.77, …]", duration: 1000 })),
+      ]);
+      await Promise.all([pop(q1), pop(q2)]);
+      const rings = [[128, 344], [70, 146]].map(([x, y]) => svg("circle", { cx: x, cy: y, r: 6, fill: "none", stroke: "#c9a000", "stroke-width": 2, opacity: 0 }, Z.vecLayer));
+      await Promise.all(rings.map(r => anim(r, [{ r: 6, opacity: 1 }, { r: 48, opacity: .9 }], { duration: 700 })));
+      pts.heat.classList.add("glow"); pts.anemone.classList.add("glow");
+      await wait(500);
+      await Promise.all([flyChip("heat stress", pts.heat, nodes.heat, "kg", { duration: 800 }), flyChip("Exaiptasia", pts.anemone, nodes.exa, "kg", { duration: 800 })]);
+      setGlow(nodes.heat, true); setGlow(nodes.exa, true);
+      await wait(400);
+      for (const e of ["a2", "a1"]) { setGlow(edges[e], true); await wait(350); }
+      setGlow(nodes.m1, true); await wait(600);
+      const sc = card(`<h3>Ranking the memories</h3>
+        <div class="score"><span><b>Memory 1</b> · reached through heat stress and Exaiptasia</span><div class="bar" data-w=".81"></div><span class="n">0.81</span></div>
+        <div class="score"><span><b>Memory 2</b> · no shared concept, text not similar</span><div class="bar" data-w=".08"></div><span class="n">—</span></div>
+        <div style="font-size:12.5px;color:var(--muted);margin-top:6px">Score = salience (importance × recency × frequency). Memory 1 is kept; Memory 2 is not recalled.</div>`,
+        placeOver(Z.llm, { dx: Z.llm.getBoundingClientRect().width > 700 ? 430 : 16, dy: 28, w: 470 }));
+      await show(sc, { duration: 250 });
+      await Promise.all([...sc.querySelectorAll(".bar")].map((b, i) => anim(b, [{ width: "0px" }, { width: `${b.dataset.w * 120}px` }], { duration: 600, delay: i * 120 })));
+      sc.querySelectorAll(".score")[1].classList.add("drop");
+      await wait(2200);
+      await hide(sc, { duration: 250 }); sc.remove();
+      const lines = [
+        '<span class="k">&lt;kgmemory&gt;</span>',
+        "Background facts recalled from long-term memory. Use them silently when relevant; do not mention that they came from memory.",
+        "## Memory context",
+        '<span class="f">&gt; Peak m/z 118.086 in Exaiptasia = valine; higher under heat stress. [src: urn:uuid:…m1]</span>',
+        '<span class="k">&lt;/kgmemory&gt;</span>',
+        "",
+        "Researcher: What did we find in the heat-stressed anemones?",
+      ];
+      const pc = card(`<h3>Prompt sent to the assistant</h3><pre class="prompt">${lines.map(l => `<span class="ln">${l || "&nbsp;"}</span>`).join("")}</pre>`, placeOver(Z.kg, { dx: 12, dy: 8, w: 560 }));
+      pc.querySelectorAll(".ln").forEach(l => (l.style.opacity = 0));
+      await show(pc, { duration: 250 });
+      for (const l of pc.querySelectorAll(".ln")) await show(l, { duration: 240 });
+      await wait(1800);
+      await flyChip("prompt", pc, $("#brain"), "", { duration: 700 });
+      await pulseBrain();
+      await hide(pc, { duration: 250 }); pc.remove();
+      await say("bot", "In your heat-stressed <i>Exaiptasia</i>, the peak at m/z 118.086, annotated as valine, was higher than in the other animals.");
+      Z.ctx.textContent = "Recalled for this question: Memory 1";
+      for (const k of ["heat", "exa", "m1"]) setGlow(nodes[k], false);
+      for (const k of ["a2", "a1"]) setGlow(edges[k], false);
+      pts.heat.classList.remove("glow"); pts.anemone.classList.remove("glow");
+      await Promise.all([q1, q2, ...rings].map(e => hide(e, { duration: 400 })));
+      [q1, q2, ...rings].forEach(e => e.remove()); delete pts.q1; delete pts.q2;
+      await wait(600);
+    },
+  },
+  {
+    title: "Correcting a memory",
+    op: "Updating",
+    focus: ["llm", "gate", "kg"],
+    text: "A reference standard shows the peak is glycine betaine, not valine. The assistant stores this as a new memory. Later, a background revision pass sees that it replaces the old one: the old memory is marked “superseded”, and kept as history.",
+    note: "Valine and glycine betaine share the formula C₅H₁₁NO₂, so they have the same mass: a mass spectrum alone cannot tell them apart. Click any card, bubble or arrow to see where it came from (its provenance).",
+    hood: `# 1. Consolidation: the new statement becomes a new memory
+<urn:uuid:…m3> a mem:SemanticMemory ;
+    mem:content "Peak m/z 118.086 is glycine betaine (reference standard), not valine." ;
+    dcterms:subject ex:glycineBetaine , ex:valine .
+
+# 2. Revision pass (offline): pairs of active memories sharing a concept are judged
+#    by the model as SUPERSEDES / DUPLICATE / INDEPENDENT; the newer one wins, by date.
+<urn:uuid:…m3> mem:supersedes <urn:uuid:…m1> .   # checked by SHACL before writing
+<urn:uuid:…m1> mem:hasState mem:Superseded .     # nothing deleted: still queryable as history`,
+    async run() {
+      const m = await say("user", `Update: the reference standard says the peak is <span class="c" data-c="betaine">glycine betaine</span>, not <span class="c" data-c="valine">valine</span>. Same formula, C₅H₁₁NO₂.`);
+      await highlight(m, ["betaine", "valine"], 350);
+      await Promise.all([flyChip("glycine betaine", span(m, "betaine"), $("#brain"), "", { duration: 800 }), wait(150).then(() => flyChip("valine", span(m, "valine"), $("#brain"), "", { duration: 800 }))]);
+      await pulseBrain();
+      await say("bot", "Thanks, noted: glycine betaine, confirmed with a standard.");
+      Z.gate.classList.add("on");
+      await flyChip("Memory 3 ✓", $("#brain"), Z.gate, "mem", { duration: 800 });
+      await wait(500);
+      Z.gate.classList.remove("on");
+      const p = addPoint("betaine", VEC_PTS.betaine); p.style.opacity = 0;
+      await flyChip("glycine betaine", Z.gate, p, "", { morph: "[0.58, 0.40, …]", duration: 900 });
+      await pop(p, { duration: 400 });
+      await addNodeAnimated("s2", m, "src");
+      await addNodeAnimated("m3", Z.gate, "mem");
+      await drawEdge("d3");
+      await addNodeAnimated("betaine", Z.gate);
+      await drawEdge("a5");
+      await drawEdge("a6");
+      await wait(600);
+      // Revision pass, in the background
+      const rc = card(`<h3>Later · revision pass (background)</h3>
+        <div class="row mrow" data-r="1"><span>① Memories 1 and 3 are both about <b>valine</b></span></div>
+        <div class="row mrow" data-r="2"><span>② The model's verdict: <b>SUPERSEDES</b></span></div>
+        <div class="row mrow" data-r="3"><span>③ Newer wins, by date → <b>Memory 3 supersedes Memory 1</b></span></div>`,
+        placeOver(Z.llm, { dx: Z.llm.getBoundingClientRect().width > 700 ? 450 : 16, dy: 30, w: 420 }));
+      rc.querySelectorAll(".row").forEach(r => (r.style.opacity = 0));
+      await show(rc, { duration: 250 });
+      const [r1, r2, r3] = rc.querySelectorAll(".row");
+      await show(r1, { duration: 300 });
+      setGlow(nodes.valine, true); setGlow(edges.a3, true); setGlow(edges.a6, true); setGlow(nodes.m1, true); setGlow(nodes.m3, true);
+      await wait(1300);
+      await show(r2, { duration: 300 }); await pulseBrain(); await wait(900);
+      await show(r3, { duration: 300 });
+      for (const k of ["valine", "m1", "m3"]) setGlow(nodes[k], false);
+      for (const k of ["a3", "a6"]) setGlow(edges[k], false);
+      await drawEdge("sup");
+      nodes.m1.classList.add("old");
+      for (const e of ["a1", "a2", "a3", "d1"]) edges[e].classList.add("faded");
+      await anim(nodes.m1, [{ opacity: 1 }, { opacity: .5 }, { opacity: 1 }], { duration: 500 });
+      await wait(1500);
+      await hide(rc, { duration: 250 }); rc.remove();
+      Z.badge.textContent = "Long-term memory: 3 memories (2 active · 1 superseded) · 5 concepts";
+      if (!instant) { await wait(300); showProv(edges.sup, true); await wait(3000); hideProv(); }
+    },
+  },
+  {
+    title: "Forgetting and reinforcing",
+    op: "Forgetting",
+    focus: ["kg"],
+    text: "Time passes. A memory that is never used fades and is archived; a memory that keeps being recalled stays strong.",
+    note: "Each memory has a retention score that drops with the time since it was last used, more slowly if it is recalled often. A scheduled pass archives memories below 0.05: archived, not erased, and a later recall can bring them back.",
+    hood: `# Forgetting pass (scheduled): retention score, then soft archiving
+R = importance · exp( −Δt_days / (T · (F̂ + ε)) )     # T = 10, ε = 1, F̂ = normalised access frequency
+# R < 0.05  →  archived, never deleted
+<urn:uuid:…m2> mem:hasState mem:Archived ;
+    prov:invalidatedAtTime "…"^^xsd:dateTime .
+# Every recall updates mem:accessFrequency and mem:lastAccessedAt
+<urn:uuid:…m3> mem:accessFrequency 7 .`,
+    async run() {
+      const rowR = (k, label) => `<div class="rrow" data-k="${k}"><b>${label}</b><div><div class="bar"></div><span class="n">—</span></div></div>`;
+      const clock = card(`<h3>Time passes</h3><div id="clk" style="font-size:24px;font-weight:650;margin-bottom:4px">Day 4</div>${rowR("m2", "Memory 2 · unused")}${rowR("m3", "Memory 3 · recalled")}<div style="font-size:12.5px;color:var(--muted);margin-top:6px">R = retention score · archived when R &lt; 0.05</div>`,
+        placeOver(Z.vec, { dx: 12, dy: 70, w: Z.vec.getBoundingClientRect().width - 24 }));
+      await show(clock, { duration: 250 });
+      await show(Z.archive, { duration: 300 });
+      const strong = [edges.a5, edges.d3, edges.a6];
+      const m2 = nodes.m2, faders = [nodes.m2, edges.a4, edges.d2, nodes.column, pts.column];
+      const setR = (k, r) => { const row = clock.querySelector(`[data-k="${k}"]`); row.querySelector(".bar").style.width = `${Math.max(2, r * 120)}px`; row.querySelector(".n").textContent = r.toFixed(2); if (r < .05) row.classList.add("drop"); };
+      setR("m2", .40); setR("m3", .90);
+      await wait(700);
+      for (const [i, [label, r2, r3]] of [["Week 1", .22, .86], ["Week 2", .11, .88], ["Week 3", .054, .87], ["Month 1", .022, .89]].entries()) {
+        $("#clk").textContent = label;
+        setGlow(nodes.m3, true); for (const e of strong) setGlow(e, true);
+        setR("m2", r2); setR("m3", r3);
+        await wait(450);
+        setGlow(nodes.m3, false);
+        for (const e of strong) { setGlow(e, false); e.querySelector("path").style.strokeWidth = 1.8 + (i + 1) * 0.6; }
+        nodes.m3.querySelector("rect").style.strokeWidth = 1.6 + (i + 1) * 0.5;
+        const o = 1 - (i + 1) * 0.14;
+        await Promise.all(faders.map(f => anim(f, [{ opacity: o }], { duration: 450 })));
+        await wait(350);
+      }
+      m2.classList.add("archived");
+      const M2 = NODES.m2;
+      await Promise.all([
+        hide(edges.a4, { duration: 400 }), hide(edges.d2, { duration: 400 }),
+        anim(m2, [{ opacity: .5, transform: "none" }, { opacity: .95, transform: `translate(${337 - M2.x}px,${419 - M2.y}px) scale(.45)` }], { duration: 900 }),
+      ]);
+      Z.badge.textContent = "Long-term memory: 3 memories (1 active · 1 superseded · 1 archived) · 5 concepts";
+      await wait(1800);
+      await hide(clock, { duration: 250 }); clock.remove();
+    },
+  },
+  {
+    title: "Recap",
+    op: "",
+    focus: null,
+    text: "KGmemory lets an assistant write, retrieve, correct and forget memories, and every step can be inspected.",
+    note: "Because the memory is an explicit graph rather than hidden inside the model, you can see what the assistant knows, where each memory came from, and fix it.",
+    hood: "Stack: RDF / OWL 2 RL ontology (mem:) · SKOS concepts aligned to DBpedia and Wikidata · SHACL shapes for quality checks · SPARQL for retrieval and updates · PROV-O for provenance · Apache Jena Fuseki (graph) · Qdrant (vectors).",
+    async run() {
+      const c = card(`<h3>Four things the memory does</h3>
+        <div class="recap">
+          <div><b>Write</b>Turn the conversation into short memories tagged with concepts, and check them before storing.</div>
+          <div><b>Retrieve</b>Find concepts by meaning, follow the links to the memories, add the best few to the prompt.</div>
+          <div><b>Correct</b>A newer memory supersedes a wrong one; the old one is kept as history.</div>
+          <div><b>Forget</b>Unused memories fade to an archive; useful ones stay strong.</div>
+        </div>
+        <p style="font-size:13.5px;color:var(--muted);margin:-2px 0 12px">Inspired by how human memory consolidates, recalls, updates and forgets, not a model of the brain. The rules check the shape of a memory, not whether it is true.</p>
+        <h3>The technical words</h3>
+        <dl class="gloss">
+          <dt>LLM</dt><dd>Large language model: the AI that reads and writes text.</dd>
+          <dt>Vector database</dt><dd>Stores lists of numbers (embeddings) so things can be found by similar meaning.</dd>
+          <dt>Knowledge graph</dt><dd>A network of nodes joined by typed links; each link is one triple (subject → relation → object).</dd>
+          <dt>SKOS</dt><dd>Standard vocabulary for concepts and how they relate (broader, related, same as an entry in Wikidata).</dd>
+          <dt>SHACL</dt><dd>Rules a memory must satisfy before it is accepted into the graph.</dd>
+          <dt>SPARQL</dt><dd>The query language used to search and update the graph.</dd>
+          <dt>Provenance (PROV-O)</dt><dd>Where a memory came from: who said it, when, in which conversation.</dd>
+        </dl>`, { left: "12px", right: "12px", top: "12px" });
+      await anim(c, [{ opacity: 0, transform: "translateY(12px)" }, { opacity: 1, transform: "none" }], { duration: 500 });
+    },
+  },
+];
+
+/* ---------- Provenance tooltip ---------- */
+const prov = $("#prov");
+function showProv(el, auto) {
+  const p = PROV[el.dataset.prov]; if (!p) return;
+  prov.innerHTML = `<b>Where this comes from</b><br>Said by: ${p.by}<br>${p.when}<br>Message: ${p.msg}<br>Operation: ${p.op}${p.extra ? `<br>${p.extra}` : ""}`;
+  const r = el.getBoundingClientRect();
+  prov.style.left = `${Math.max(8, Math.min(window.innerWidth - 310, r.left + r.width / 2 - 150))}px`;
+  prov.style.top = `${Math.max(8, r.top - 120)}px`;
+  prov.style.opacity = 1;
+}
+const hideProv = () => (prov.style.opacity = 0);
+scene.addEventListener("click", e => { const el = e.target.closest("[data-prov]"); if (el) showProv(el); else hideProv(); });
+scene.addEventListener("mouseover", e => { const el = e.target.closest("[data-prov]"); if (el) showProv(el); });
+scene.addEventListener("mouseout", e => { if (e.target.closest("[data-prov]")) hideProv(); });
+
+/* ---------- Player ---------- */
+let current = 0, layout = null, doneStep = -1;
+const dots = $("#dots");
+STEPS.forEach((s, i) => { const b = document.createElement("button"); b.title = `${i + 1}. ${s.title}`; b.setAttribute("aria-label", b.title); b.onclick = () => go(i); dots.appendChild(b); });
+
+const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+// Dim the zones that play no part in the current step
+function focusZones(keys) {
+  for (const k of ["llm", "gate", "vec", "kg"]) Z[k].classList.toggle("dim", !!keys && !keys.includes(k));
+}
+function resetAll() {
+  layout = window.innerWidth <= 900 ? "tall" : "wide";
+  buildScene(layout);
+  msgs.innerHTML = ""; hideProv();
+  $("#session").textContent = "Session 1";
+}
+function renderCaption(i) {
+  const s = STEPS[i];
+  $("#stepno").textContent = `${i + 1} / ${STEPS.length}`;
+  $("#steptitle").textContent = s.title;
+  $("#stepop").textContent = s.op || "";
+  scene.setAttribute("aria-label", `Step ${i + 1}: ${s.title}. ${s.text}`);
+  $("#steptext").textContent = s.text;
+  $("#stepnote").textContent = s.note;
+  $("#hoodcode").textContent = s.hood;
+  [...dots.children].forEach((d, j) => { d.classList.toggle("on", j === i); d.classList.toggle("done", j < i); if (j === i) d.setAttribute("aria-current", "step"); else d.removeAttribute("aria-current"); });
+  $("#prev").disabled = i === 0;
+  $("#next").disabled = i === STEPS.length - 1;
+}
+async function go(i, { animate = true } = {}) {
+  i = Math.max(0, Math.min(STEPS.length - 1, i));
+  const id = ++runId;
+  document.getAnimations().forEach(a => a.cancel());
+  current = i;
+  renderCaption(i);
+  resetAll();
+  try {
+    instant = true;
+    for (let j = 0; j < i; j++) await STEPS[j].run();
+    focusZones(STEPS[i].focus);
+    instant = !animate || reduceMotion.matches;
+    await STEPS[i].run();
+    if (id === runId) doneStep = i;
+  } catch (e) {
+    if (!(e instanceof Cancelled)) console.error(e);
+  } finally {
+    if (id === runId) instant = false;
+  }
+}
+$("#next").onclick = () => go(current + 1);
+$("#prev").onclick = () => go(current - 1);
+$("#replay").onclick = () => go(current);
+document.addEventListener("keydown", e => {
+  if (e.target.closest("summary, input, textarea")) return;
+  if (e.key === "ArrowRight" || e.key === "PageDown") { e.preventDefault(); go(current + 1); }
+  if (e.key === "ArrowLeft" || e.key === "PageUp") { e.preventDefault(); go(current - 1); }
+});
+$("#speed").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  speed = +b.dataset.s;
+  [...$("#speed").children].forEach(x => x.classList.toggle("on", x === b));
+});
+let resizeTimer;
+window.addEventListener("resize", () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => { if ((window.innerWidth <= 900 ? "tall" : "wide") !== layout) go(current, { animate: false }); }, 200);
+});
+window.__demo = { go, get current() { return current; }, get done() { return doneStep; }, counts: () => ({ nodes: Object.keys(nodes).length, edges: Object.keys(edges).length, points: Object.keys(pts).length }) };
+go(0);
+</script>
+</body>
+</html>
