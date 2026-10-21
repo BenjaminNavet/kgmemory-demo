@@ -9,7 +9,7 @@ extraction, SHACL validation with a bounded repair loop, access reinforcement, r
 (supersedes / contradicts), abstraction, NPMI association (Hebbian ranking opt-in),
 decay-based archiving and PROV-O provenance — on an RDF / OWL 2 RL / SHACL / PROV-O memory.
 
-**Live: <https://benjaminnavet.github.io/kgmemory-demo/>** — or open `index.html` in a browser and step through with the › button or the arrow keys.
+**Live: <https://benjaminnavet.github.io/kgmemory-demo/>** — opens the short guided demo (`v2/`). The full 15-step walk-through is at <https://benjaminnavet.github.io/kgmemory-demo/v1/> (or open `v1/index.html` in a browser and step through with the › button or the arrow keys).
 
 This is a **static mock-up replaying recorded steps**: there is no live backend, LLM or
 triple store behind the page.
