@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KGmemory glass box</title>
+<meta name="description" content="Ask a knowledge-graph memory a recorded question, then open every stage of the real pipeline: topics, graph query, ranking, the block served to the model, and the provenance of each memory.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body data-level="simple">
+
+<div class="topbar">
+  <div class="wrap">
+    <div class="brand">KGmemory <span>· glass box</span></div>
+    <div class="seg" role="group" aria-label="Reading level">
+      <button type="button" data-level="simple" aria-pressed="true">Simple</button>
+      <button type="button" data-level="technical" aria-pressed="false">Technical</button>
+    </div>
+  </div>
+</div>
+
+<header class="hero">
+  <div class="wrap">
+    <h1>A memory you can open and check</h1>
+    <p class="lede simple">An AI assistant forgets everything between conversations. KGmemory gives it a long-term memory stored as a graph of facts, where every fact keeps a link to the sentence it came from. Pick a question below and look inside.</p>
+    <p class="lede tech">KGmemory is an external memory for LLM agents: RDF memories in a triple store, SKOS concepts, SHACL-gated writes, and a PROV-O activity for every mutation. Pick a question below and open each stage of the pipeline.</p>
+    <div class="stamp" id="stamp"></div>
+    <div class="tiles" id="tiles"></div>
+  </div>
+</header>
+
+<main>
+  <section class="block" id="ask">
+    <div class="wrap">
+      <div class="kicker"><i>1</i> Ask</div>
+      <h2>Ask the memory a question</h2>
+      <p class="intro" id="ask-intro"></p>
+      <div class="questions" id="questions" role="radiogroup" aria-label="Recorded questions"></div>
+      <div class="answers" id="answers" aria-live="polite"></div>
+      <div class="card"><div class="pad" id="served"></div></div>
+    </div>
+  </section>
+
+  <section class="block" id="read">
+    <div class="wrap">
+      <div class="kicker"><i>2</i> Read</div>
+      <h2>How those memories were found</h2>
+      <p class="intro simple">No large language model is called to find memories. The question is matched to topics, the graph is followed from those topics, and the candidates are ranked and trimmed to fit a size limit. Open a step to see what it produced for this question.</p>
+      <p class="intro tech">Retrieval is deterministic and local: concept resolution by embedding, one SPARQL <code>CONSTRUCT</code> over the SKOS neighbourhood, a dense content channel fused by RRF, a cross-encoder window, then packing under a character budget. Timings are the ones recorded for this call.</p>
+      <div class="stages" id="stages"></div>
+    </div>
+  </section>
+
+  <section class="block" id="provenance">
+    <div class="wrap">
+      <div class="kicker"><i>3</i> Provenance</div>
+      <h2>Where one memory comes from</h2>
+      <p class="intro">Tap any memory above to trace it. Each one can be walked back to the words that were said, and forward to every time it was used.</p>
+      <div id="memory"></div>
+    </div>
+  </section>
+
+  <section class="block" id="later">
+    <div class="wrap">
+      <div class="kicker"><i>4</i> Later</div>
+      <h2>What happens between conversations</h2>
+      <p class="intro simple">A memory that only grows becomes noise. Between conversations, maintenance passes retire facts that newer ones replaced, let unused memories fade, and condense repeated ones. Here is what each pass did on this store.</p>
+      <p class="intro tech">Maintenance passes run offline, never on the write path. Each one is a <code>prov:Activity</code>; nothing is deleted, states change. Outcomes below are those recorded on this store.</p>
+      <div class="grid2" id="maintenance"></div>
+    </div>
+  </section>
+
+  <section class="block" id="store">
+    <div class="wrap">
+      <div class="kicker"><i>5</i> Store</div>
+      <h2>What is in the store, and how it was built</h2>
+      <p class="intro" id="store-intro"></p>
+      <div class="grid2" id="storegrid"></div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="logos">
+      <img src="assets/inria.png" alt="Inria">
+      <img src="assets/cnrs.png" alt="CNRS">
+      <img src="assets/uca.png" alt="Université Côte d'Azur">
+      <img src="assets/wimmics.png" alt="Wimmics">
+      <img src="assets/holobiomicslab.png" alt="HolobiomicsLab">
+    </div>
+    <p>Paper: <a href="https://hal.science/hal-05747244">Knowledge Graphs as External Memory for LLM-based Scientific Assistants</a> (Benjamin Navet, ISWC 2026 Doctoral Consortium).</p>
+    <p id="credits"></p>
+    <p>This page replays recordings. There is no live model or database behind it. Earlier versions: <a href="../v2/">animated story</a> · <a href="../v1/">15-step walk-through</a>.</p>
+  </div>
+</footer>
+
+<script src="data/runs.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
