@@ -11,6 +11,25 @@ SHACL, PROV-O, OWL-Time, Web Annotation).
 | [`v2/`](https://benjaminnavet.github.io/kgmemory-demo/v2/) | Short animated story in 8 steps, on an invented example. |
 | [`v1/`](https://benjaminnavet.github.io/kgmemory-demo/v1/) | Full 15-step walk-through, on an invented example. |
 
+## Presenting it
+
+`v3/` has a presenter mode for a talk or a screen share: open
+<https://benjaminnavet.github.io/kgmemory-demo/v3/?present>, or press `P` on the page. Nine
+slides drawn from the same recording go through the whole demo: how the memory is built, the
+six questions, one question worked through (its answers, the graph of the memories given, the
+search, the source of one memory), the six side by side, the upkeep of the store.
+
+| Key | Effect |
+|---|---|
+| `→` `Space` / `←` | next / previous slide |
+| `1` to `6` | change the question worked through |
+| `T` | Simple or Technical level |
+| `C` | clock |
+| `Esc` | back to the page |
+
+The mode needs no network once the page is loaded; fonts are served with the page
+(IBM Plex, SIL Open Font License, `v3/assets/fonts/OFL.txt`).
+
 ## Where the v3 data comes from
 
 Everything `v3/` displays is read from `v3/data/runs.js`, which an export script wrote by
@@ -23,7 +42,7 @@ calling the unmodified KGmemory pipeline on a dedicated store:
   recalled block;
 - each served memory is read back from the graph with its source passage, its quote anchor
   and its write activity, and is validated again against the SHACL shapes;
-- the maintenance passes (revision, contradiction detection, forgetting, abstraction) were
+- the maintenance passes (revision, contradiction detection, forgetting, abstraction, associations) were
   then run for real, and the page reports what each one did.
 
 The pages are static: there is no live backend, model or triple store behind them, and no

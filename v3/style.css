@@ -1,4 +1,14 @@
 /* KGmemory glass box — HolobiomicsLab charter: paper, CNRS blue, yellow accent, IBM Plex. */
+/* IBM Plex, self-hosted (SIL Open Font License, see assets/fonts/OFL.txt): the page makes no network request. */
+@font-face { font-family: "IBM Plex Sans"; font-style: normal; font-weight: 400; font-display: swap; src: url("assets/fonts/ibm-plex-sans-400.woff2") format("woff2"); }
+@font-face { font-family: "IBM Plex Sans"; font-style: normal; font-weight: 500; font-display: swap; src: url("assets/fonts/ibm-plex-sans-500.woff2") format("woff2"); }
+@font-face { font-family: "IBM Plex Sans"; font-style: normal; font-weight: 600; font-display: swap; src: url("assets/fonts/ibm-plex-sans-600.woff2") format("woff2"); }
+@font-face { font-family: "IBM Plex Sans"; font-style: normal; font-weight: 700; font-display: swap; src: url("assets/fonts/ibm-plex-sans-700.woff2") format("woff2"); }
+@font-face { font-family: "IBM Plex Serif"; font-style: normal; font-weight: 500; font-display: swap; src: url("assets/fonts/ibm-plex-serif-500.woff2") format("woff2"); }
+@font-face { font-family: "IBM Plex Serif"; font-style: normal; font-weight: 600; font-display: swap; src: url("assets/fonts/ibm-plex-serif-600.woff2") format("woff2"); }
+@font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 400; font-display: swap; src: url("assets/fonts/ibm-plex-mono-400.woff2") format("woff2"); }
+@font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 500; font-display: swap; src: url("assets/fonts/ibm-plex-mono-500.woff2") format("woff2"); }
+@font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 600; font-display: swap; src: url("assets/fonts/ibm-plex-mono-600.woff2") format("woff2"); }
 :root {
   color-scheme: light;
   --bg: #fbf7ef; --paper-2: #f3ecdc; --panel: #ffffff; --ink: #16242f; --muted: #5d6a78; --line: #e7e0cc;
@@ -34,6 +44,10 @@ body[data-level="technical"] .simple { display: none !important; }
 .topbar .wrap { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 56px; }
 .brand { font: 600 18px/1.2 var(--display); color: var(--blue); letter-spacing: -0.01em; white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .seg { flex: none; }
+.bar-actions { display: flex; align-items: center; gap: 10px; flex: none; }
+.present-btn { display: none; border: 1.5px solid var(--blue); background: transparent; color: var(--blue); border-radius: 999px; padding: 7px 14px; min-height: 38px; font-weight: 600; font-size: 14px; }
+.present-btn:hover { background: var(--blue-soft); }
+@media (min-width: 1000px) { .present-btn { display: inline-block; } }
 @media (max-width: 420px) { .brand span { display: none; } .seg button { padding: 7px 12px; } }
 .brand span { color: var(--muted); font-weight: 500; }
 .seg { display: inline-flex; padding: 3px; background: var(--paper-2); border-radius: 999px; }

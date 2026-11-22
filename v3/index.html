@@ -5,19 +5,20 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>KGmemory glass box</title>
 <meta name="description" content="Ask a knowledge-graph memory a recorded question, then open every stage of the real pipeline: topics, graph query, ranking, the block served to the model, and the provenance of each memory.">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:wght@500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="present.css">
 </head>
 <body data-level="simple">
 
 <div class="topbar">
   <div class="wrap">
     <div class="brand">KGmemory <span>· glass box</span></div>
-    <div class="seg" role="group" aria-label="Reading level">
-      <button type="button" data-level="simple" aria-pressed="true">Simple</button>
-      <button type="button" data-level="technical" aria-pressed="false">Technical</button>
+    <div class="bar-actions">
+      <button type="button" class="present-btn" id="present-btn" title="Guided tour of the selected question on a 16:9 canvas, for a shared screen (key P)">Present</button>
+      <div class="seg" role="group" aria-label="Reading level">
+        <button type="button" data-level="simple" aria-pressed="true">Simple</button>
+        <button type="button" data-level="technical" aria-pressed="false">Technical</button>
+      </div>
     </div>
   </div>
 </div>
@@ -100,5 +101,6 @@
 
 <script src="data/runs.js"></script>
 <script src="app.js"></script>
+<script src="present.js"></script>
 </body>
 </html>

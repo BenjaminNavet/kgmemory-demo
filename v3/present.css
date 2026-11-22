@@ -1,0 +1,228 @@
+/* KGmemory glass box — presenter mode canvas. Everything is scoped under #present.
+   The canvas is a fixed 1920×1080 stage scaled to the window, so sizes below are canvas pixels.
+   Rule: one picture, diagram or graph per beat, no text under 26 px (17 px once a 1080p share is
+   shown at 720p), no animation, no scrolling. */
+body[data-mode="present"] { overflow: hidden; }
+body[data-mode="present"] > :not(#present) { display: none !important; }
+
+#present { position: fixed; inset: 0; z-index: 100; overflow: hidden; background: var(--bg); --pink: #16242f; --psoft: #36434f; }
+#present[hidden] { display: none; }
+#present *, #present *::before, #present *::after { transition: none !important; animation: none !important; }
+#present p, #present h1 { margin: 0; }
+
+.pcanvas {
+  position: absolute; left: 50%; top: 50%; width: 1920px; height: 1080px;
+  transform: translate(-50%, -50%) scale(var(--pscale, 1));
+  display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 30px;
+  padding: 44px 96px 30px; color: var(--pink); font: 400 32px/1.4 var(--font);
+}
+
+/* ---------- head: where we are, the one message ---------- */
+.phead { display: grid; gap: 18px; }
+.pkicker { display: flex; align-items: center; gap: 14px; font: 600 28px/1 var(--font); letter-spacing: 0.07em; text-transform: uppercase; color: #6b7480; }
+.pkicker b { margin-right: 10px; padding: 8px 16px; border-radius: 999px; background: var(--yellow); color: var(--blue); letter-spacing: 0; font-variant-numeric: tabular-nums; }
+.pstep { padding: 8px 4px; border-bottom: 5px solid transparent; }
+.pstep + .pstep::before { content: "›"; margin-right: 14px; color: #a9a290; }
+.pstep.done { color: var(--psoft); }
+.pstep.now { color: var(--blue); border-bottom-color: var(--yellow); }
+.pheadline { font: 600 62px/1.12 var(--display); letter-spacing: -0.015em; color: var(--blue); max-width: 1728px; }
+
+.pbody { min-height: 0; overflow: hidden; display: grid; align-content: center; gap: 26px; grid-template-columns: minmax(0, 1fr); }
+
+/* ---------- foot ---------- */
+.pfoot { display: flex; align-items: center; gap: 28px; padding-top: 12px; border-top: 2px solid var(--line); font-size: 26px; line-height: 1.3; color: var(--psoft); }
+.pcontext { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pdot { display: inline-block; width: 16px; height: 16px; margin-right: 12px; border-radius: 50%; background: var(--bad); }
+.pclock { flex: none; font: 500 26px var(--mono); font-variant-numeric: tabular-nums; }
+.pnav { flex: none; display: flex; gap: 12px; }
+.pnav button { width: 46px; height: 46px; border-radius: 50%; border: 2px solid #cfc7ae; background: transparent; color: var(--psoft); font: 600 28px/1 var(--font); }
+.pnav button:disabled { border-color: var(--line); color: #c9c2ad; cursor: default; }
+
+/* ---------- pointer halo ---------- */
+.phalo { position: fixed; left: -100px; top: -100px; width: 64px; height: 64px; margin: -32px 0 0 -32px; border-radius: 50%; border: 4px solid #e0a800; background: #ffeb6e66; pointer-events: none; display: none; }
+.phalo.on { display: block; }
+
+/* ---------- shared pieces ---------- */
+.dicon, .davatar, .drobot { flex: none; display: block; }
+.dwho { display: flex; align-items: center; gap: 14px; font: 600 28px/1.2 var(--font); letter-spacing: 0.05em; text-transform: uppercase; color: var(--psoft); }
+.dwho small { margin-left: auto; font: 500 28px/1.2 var(--font); letter-spacing: 0; text-transform: none; }
+.ppill { padding: 6px 26px; border-radius: 999px; background: var(--concept-soft); border: 2px solid #b9a8f3; color: #2f1f7a; font-weight: 600; font-size: 34px; }
+.pverdict { margin-left: auto; padding: 4px 20px; border-radius: 999px; font: 600 28px/1.35 var(--font); letter-spacing: 0; text-transform: none; white-space: nowrap; }
+.pverdict.match, .pverdict.trap { background: var(--ok-soft); color: #1e5a22; border: 2px solid #8fc793; }
+.pverdict.miss { background: var(--bad-soft); color: #8f1b12; border: 2px solid #e59a92; }
+.dmore { display: flex; align-items: center; justify-content: space-between; gap: 40px; font-size: 28px; line-height: 1.3; }
+.drest { display: flex; align-items: center; gap: 18px; font-weight: 600; white-space: nowrap; }
+.dtiles { display: grid; grid-template-rows: repeat(2, 20px); grid-auto-flow: column; grid-auto-columns: 20px; gap: 5px; }
+.dtiles i { background: #f0d9b8; border-left: 5px solid var(--mem); }
+.dtiles.full i { background: var(--yellow); border-left-color: var(--mem); }
+.dtech { font: 400 26px/1.35 var(--mono); color: var(--psoft); overflow-wrap: anywhere; }
+.dbubble { position: relative; min-width: 0; padding: 22px 30px; border-radius: 24px; background: #fff; border: 2px solid var(--line); }
+.dbubble::before { content: ""; position: absolute; left: -17px; top: 46px; width: 30px; height: 30px; background: inherit; border-left: inherit; border-bottom: inherit; transform: rotate(45deg); border-bottom-left-radius: 6px; }
+
+/* ---------- 1. build: conversation → graph → assistant ---------- */
+.dpipe { display: grid; grid-template-columns: minmax(0, 1fr) 230px minmax(0, 1fr) 230px minmax(0, 1fr); align-items: center; gap: 14px; }
+.dstation { display: grid; justify-items: center; gap: 16px; padding: 26px 24px 28px; border-radius: 26px; background: #fff; border: 2px solid var(--line); }
+.dstation.graph { border: 3px solid var(--concept); background: var(--concept-soft); }
+.dtitle { font: 600 30px/1.2 var(--font); letter-spacing: 0.06em; text-transform: uppercase; color: var(--blue); }
+.dpicture { position: relative; display: grid; place-items: center; width: 100%; height: 270px; }
+.dcount { display: grid; justify-items: center; text-align: center; font-size: 30px; line-height: 1.25; }
+.dcount b { font: 600 88px/1 var(--display); color: var(--blue); font-variant-numeric: tabular-nums; }
+.dchat { display: grid; gap: 14px; width: 330px; }
+.dturn { display: flex; align-items: center; gap: 14px; }
+.dturn.right { flex-direction: row-reverse; }
+.dlines { flex: 1; display: grid; gap: 10px; padding: 16px 20px; border-radius: 18px; background: var(--blue-soft); }
+.dturn.right .dlines { background: var(--mem-soft); }
+.dlines i { height: 10px; border-radius: 5px; background: #9db4c9; }
+.dturn.right .dlines i { background: #e2b983; }
+.dlines i.short { width: 60%; }
+.dcluster { display: block; height: 270px; width: auto; }
+.dthought { position: absolute; right: 30px; top: 0; display: grid; place-items: center; width: 84px; height: 84px; border-radius: 50%; background: var(--yellow); color: var(--blue); font: 600 56px/1 var(--display); }
+.dpipe-arrow { display: grid; justify-items: center; gap: 10px; text-align: center; font-size: 28px; line-height: 1.2; font-weight: 600; color: var(--blue); }
+.dpipe-arrow span { display: grid; justify-items: center; gap: 6px; }
+.dpipe-arrow > svg { width: 200px; height: 44px; }
+.dpipe-arrow > svg path { fill: none; stroke: var(--blue); stroke-width: 7; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ---------- questions: the whole set at a glance ---------- */
+.dboard { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 26px; }
+.dcard { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; align-content: space-between; padding: 24px 28px 24px; border-radius: 22px; background: #fff; border: 2px solid var(--line); cursor: pointer; }
+.dcard.now { border-color: var(--blue); box-shadow: 0 0 0 7px var(--yellow); }
+.dcard-top { display: flex; gap: 16px; align-items: flex-start; min-height: 78px; font: 600 32px/1.22 var(--display); color: var(--blue); }
+.dcard-top b { flex: none; display: grid; place-items: center; width: 46px; height: 46px; border-radius: 50%; background: var(--blue); color: #fff; font: 600 28px var(--mono); }
+.dcard-top span { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.dcard-row { display: flex; align-items: center; justify-content: center; gap: 34px; }
+.dcard-verdict { display: flex; justify-content: center; }
+.dcard-verdict .pverdict { margin-left: 0; }
+.dduo { position: relative; flex: none; display: block; }
+.dmark { position: absolute; right: -14px; top: -8px; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; border: 3px solid #fff; background: #7a8490; color: #fff; font: 700 26px/1 var(--font); }
+.dmark.match, .dmark.trap { background: #2e7d32; }
+.dmark.miss { background: #c62828; }
+.dcard .pverdict { font-size: 26px; padding: 4px 16px; }
+
+/* ---------- all of them: one chart for every question ---------- */
+.dacross { display: block; width: 100%; height: auto; }
+.dacross text { font-family: var(--font); fill: var(--pink); }
+.dacross .dlabel { font-size: 28px; }
+.dacross .strong { font-weight: 700; fill: var(--blue); }
+.dacross .good { fill: #1e5a22; }
+.dchip-dot { fill: var(--blue); }
+.dacross .dchip-num { font: 600 28px var(--mono); fill: #fff; }
+.dfocus-row { fill: #fff; stroke: var(--line); stroke-width: 2; }
+
+/* ---------- upkeep: the store and the passes around it ---------- */
+.dupkeep { position: relative; width: 1728px; height: 590px; }
+.dnode.dpass { display: grid; gap: 10px; align-content: center; padding: 20px 28px; border-radius: 22px; background: #fff; border: 2px solid var(--line); overflow: hidden; }
+.dpass .dwho { color: var(--blue); }
+.dfig { font-size: 30px; line-height: 1.2; }
+.dfig b { margin-right: 4px; font: 600 60px/1 var(--display); color: var(--blue); font-variant-numeric: tabular-nums; }
+.dthen { font-size: 28px; line-height: 1.25; color: var(--psoft); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.dnode.dstore { display: grid; justify-items: center; gap: 4px; }
+.dstore .dcount { font-size: 30px; line-height: 1.2; }
+.dstore .dcount b { font-size: 58px; margin-right: 6px; }
+.dstore .dcluster { height: 226px; }
+.pwhich { margin-right: 14px; padding: 4px 16px; border-radius: 999px; background: var(--blue); color: #fff; font-weight: 600; }
+
+/* ---------- 2. ask: one question, two answers ---------- */
+.dasker { display: flex; align-items: center; gap: 30px; justify-content: center; }
+.dbubble.question { max-width: 1400px; padding: 22px 40px; border-bottom: 8px solid var(--yellow); font: 600 54px/1.15 var(--display); letter-spacing: -0.015em; color: var(--blue); }
+.dbubble.question::before { top: calc(50% - 15px); border-bottom: 2px solid var(--line); }
+.danswers { display: grid; grid-template-columns: 5fr 7fr; gap: 36px; align-items: start; }
+.danswer { display: flex; align-items: flex-start; gap: 26px; }
+.danswer .dbubble { flex: 1; display: grid; gap: 12px; }
+.danswer p { font-size: 34px; line-height: 1.32; }
+.danswer.with .dbubble { background: var(--blue-soft); border: 3px solid var(--blue); }
+.danswer.with .dwho { color: var(--blue); }
+.danswer.with p strong { font-weight: 700; }
+.dnote { text-align: center; font-size: 32px; line-height: 1.3; }
+.dnote b { font-weight: 700; }
+
+/* ---------- 3. graph: every memory given, and its concepts ---------- */
+.dgraph { display: block; width: 100%; height: auto; }
+.dgraph text { font-family: var(--font); }
+.dedge { fill: none; stroke: var(--concept); stroke-width: 2.4; stroke-opacity: 0.38; }
+.dmemory-node { fill: #f6c98b; stroke: var(--mem); stroke-width: 3; }
+.dconcept-node { fill: var(--concept-soft); stroke: var(--concept); stroke-width: 3; }
+.dconcept-node.asked { fill: var(--concept); }
+.dtraced { fill: none; stroke: #e0a800; stroke-width: 7; }
+.dname { font-size: 28px; font-weight: 700; fill: #2f1f7a; paint-order: stroke; stroke: var(--bg); stroke-width: 9px; stroke-linejoin: round; }
+.dname.inside { fill: #fff; stroke: none; }
+.dlegend { display: flex; align-items: center; gap: 12px; white-space: nowrap; }
+.dlegend i { flex: none; width: 30px; height: 30px; border-radius: 50%; margin-left: 24px; }
+.dlegend i:first-child { margin-left: 0; }
+.dlegend i.asked { background: var(--concept); }
+.dlegend i.concept { background: var(--concept-soft); border: 3px solid var(--concept); }
+.dlegend i.memory { width: 24px; height: 24px; background: #f6c98b; border: 3px solid var(--mem); }
+.dlegend i.traced { width: 24px; height: 24px; background: #f6c98b; border: 3px solid var(--mem); outline: 5px solid #e0a800; outline-offset: 4px; margin-left: 32px; margin-right: 6px; }
+
+/* ---------- 4. search: the flow, to scale ---------- */
+.dconcepts { display: flex; align-items: center; gap: 18px; }
+.ppill.more { background: transparent; border-style: dashed; }
+.dconcepts .ppill { white-space: nowrap; }
+.darrow { font: 600 44px/1 var(--font); color: var(--psoft); }
+.dchip { margin-left: auto; display: flex; align-items: center; gap: 12px; padding: 8px 24px; border-radius: 999px; background: #fff; border: 2px solid var(--line); font-size: 30px; font-weight: 600; white-space: nowrap; }
+.dflow { display: block; width: 100%; height: auto; }
+.dflow text { font-family: var(--font); fill: var(--pink); }
+.dflow .dhead { font-size: 36px; }
+.dflow .strong { font-weight: 700; fill: var(--blue); }
+.dflow .dlabel { font-size: 32px; }
+.dflow .dnum { font: 600 60px var(--display); fill: var(--blue); }
+.dband { opacity: 0.22; }
+.dframe { fill: none; stroke: none; }
+
+/* ---------- 5. source: one memory and its provenance, as a graph ---------- */
+.dprov { position: relative; width: 1728px; height: 560px; }
+.dprov-edges { position: absolute; inset: 0; width: 100%; height: 100%; }
+.dprov-edge { fill: none; stroke: var(--blue); stroke-width: 5; stroke-linecap: round; }
+.dprov-name { font: italic 600 28px var(--font); fill: var(--blue); paint-order: stroke; stroke: var(--bg); stroke-width: 12px; stroke-linejoin: round; }
+.dnode { position: absolute; box-sizing: border-box; }
+.dnode.said, .dnode.memory { display: grid; gap: 14px; align-content: center; padding: 22px 28px; border-radius: 22px; background: #fff; border: 2px solid var(--line); overflow: hidden; }
+.dnode.said { transform: translateY(-50%); }
+.dnode.said p { font-size: 30px; line-height: 1.38; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 6; overflow: hidden; }
+.dnode.said mark { background: var(--yellow); color: var(--pink); padding: 2px 4px; border-radius: 5px; font-weight: 600; }
+.dnode.memory { background: var(--mem-soft); border: 3px solid var(--mem); }
+.dnode.memory .dwho { color: #7a4310; }
+.dnode.memory p { font-size: 34px; line-height: 1.26; font-weight: 500; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 5; overflow: hidden; }
+.dnode.about { display: grid; place-items: center; padding: 0 22px; border-radius: 38px; background: var(--concept-soft); border: 3px solid var(--concept); color: #2f1f7a; font-size: 28px; line-height: 1.12; font-weight: 600; text-align: center; }
+.dnode.about span { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.dnode.record { display: flex; align-items: center; gap: 18px; padding: 12px 22px; white-space: nowrap; border-radius: 20px; background: #fff; border: 2px solid var(--line); color: var(--blue); }
+.dnode.record span { display: grid; font-size: 28px; line-height: 1.3; color: var(--pink); }
+.dnode.record b { font: 600 40px/1.15 var(--display); color: var(--blue); }
+.dnode.record.ok { background: var(--ok-soft); border-color: #8fc793; color: #1e5a22; }
+.dnode.record.ok b { color: #1e5a22; }
+.dnode.record.bad { background: var(--bad-soft); border-color: #e59a92; color: #8f1b12; }
+.dnode.record.bad b { color: #8f1b12; }
+[data-beat="source"] .dmore { justify-content: center; }
+
+/* ---------- 6. recap ---------- */
+.drecap { display: grid; grid-template-columns: minmax(0, 1fr) 644px 420px; gap: 40px; align-items: center; }
+.dpoints { display: grid; gap: 20px; }
+.dpoint { display: flex; align-items: center; gap: 26px; padding: 22px 28px; border-radius: 20px; background: #fff; border: 2px solid var(--line); color: var(--blue); }
+.dpoint span { display: grid; gap: 4px; font-size: 32px; line-height: 1.25; color: var(--pink); }
+.dpoint strong { font: 600 28px/1.3 var(--font); letter-spacing: 0.07em; text-transform: uppercase; color: var(--blue); }
+.dpreview { border-radius: 16px; overflow: hidden; border: 2px solid #b9b19a; background: #fff; box-shadow: 0 14px 0 -6px #e6dfc9; }
+.dchrome { display: flex; gap: 10px; padding: 14px 18px; background: #ece6d3; }
+.dchrome i { width: 16px; height: 16px; border-radius: 50%; background: #b9b19a; }
+.dpreview img { display: block; width: 640px; height: 400px; }
+.pqr { display: grid; gap: 12px; justify-items: center; text-align: center; padding: 24px; border-radius: 18px; background: #fff; border: 2px solid var(--line); }
+.pqr img { display: block; width: 340px; height: 340px; }
+.purl { font: 600 27px/1.3 var(--mono); color: var(--blue); white-space: nowrap; text-decoration: none; }
+
+/* Reading level inside the canvas: a hidden layer must not leave a gap in a grid. */
+#present .simple:empty, #present .tech:empty { display: none; }
+
+/* Annotated stills (tools/export_tour.py): a ring around the point of the beat, and nothing of the live page that
+   cannot be used on a slide. */
+#present .pfocus { outline: 8px solid #e0a800; outline-offset: 6px; }
+#present .dframe.pfocus { outline: none; stroke: #e0a800; stroke-width: 8px; }
+#present .dlegend.pfocus { padding: 10px 18px; border-radius: 16px; }
+#present.pstill .pnav { display: none; }
+#present.pstill .pbody { overflow: visible; }
+
+/* The Technical level adds one line of identifiers under the picture: the beat gives it the room. */
+body[data-level="technical"] #present .pbody { gap: 18px; }
+/* On the source beat the identifiers take the place of the tiles: the headline already gives their count. */
+body[data-level="technical"] #present .pcanvas[data-beat="source"] .dmore { display: none; }
+body[data-level="technical"] #present .danswer p { font-size: 32px; }
+body[data-level="technical"] #present .dpicture { height: 240px; }
+body[data-level="technical"] #present .dcluster { height: 240px; }
+body[data-level="technical"] #present .dcard .drobot { width: 76px; height: 76px; }
+body[data-level="technical"] #present .dcard { gap: 12px; padding: 18px 26px; }

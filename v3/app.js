@@ -175,11 +175,12 @@
     covered: "the memories already in play cover the question, so the long-term memory was not searched again",
   };
 
-  function bipartite(question) {
+  function bipartite(question, maxMemories) {
     const graph = question.graph;
     if (!graph.edges || !graph.edges.length) return null;
-    const concepts = [...new Set(graph.edges.map((edge) => edge[0]))];
-    const memories = [...new Set(graph.edges.map((edge) => edge[1]))];
+    const memories = [...new Set(graph.edges.map((edge) => edge[1]))].slice(0, maxMemories || Infinity);
+    const edges = graph.edges.filter((edge) => memories.includes(edge[1]));
+    const concepts = [...new Set(edges.map((edge) => edge[0]))];
     const rowHeight = 30, leftWidth = 150, rightX = 250, width = 640;
     const height = Math.max(concepts.length, memories.length) * rowHeight + 16;
     const y = (index, count) => 8 + (index + 0.5) * (height - 16) / count;
@@ -195,7 +196,7 @@
       svg.append(node);
       return node;
     };
-    for (const [concept, memoryId] of graph.edges) {
+    for (const [concept, memoryId] of edges) {
       const y1 = y(concepts.indexOf(concept), concepts.length), y2 = y(memories.indexOf(memoryId), memories.length);
       add("path", { d: `M${leftWidth} ${y1} C ${leftWidth + 50} ${y1}, ${rightX - 50} ${y2}, ${rightX} ${y2}`, fill: "none", stroke: "#6941eb", "stroke-opacity": "0.35", "stroke-width": "1.4" });
     }
@@ -212,7 +213,35 @@
       add("rect", { x: rightX, y: cy - 11, width: 4, height: 22, fill: "#b8661a" });
       add("text", { x: rightX + 10, y: cy + 4, "font-size": "12", fill: "#16242f" }, label.length > 58 ? label.slice(0, 57) + "…" : label);
     });
-    return h("div", { class: "graph" }, svg);
+    return h("div", { class: "graph", "data-memories": memories.length }, svg);
+  }
+
+  // Concepts recognised in the question, best match first, one row per concept.
+  function recognisedTopics(question) {
+    const topics = question.topics;
+    const recognised = [];
+    for (const hit of topics.terms.filter((term) => term.kept).sort((a, b) => b.score - a.score)) {
+      if (!recognised.some((row) => row.label === hit.label)) recognised.push(hit);
+    }
+    if (!recognised.length) topics.items.forEach((topic) => recognised.push({ term: topic.term, label: topic.label, score: topic.score }));
+    return recognised;
+  }
+
+  // Where the candidates of the ranking stage come from. The bridge (memories filed under the other topics of the
+  // best candidates) is traced as P1i_bridge and joins the pool before the reading model.
+  function candidates(question) {
+    const ranking = question.ranking;
+    const bridge = (ranking.raw && ranking.raw.P1i_bridge && ranking.raw.P1i_bridge.admitted) || 0;
+    return { graph: ranking.pool, meaning: ranking.admitted, bridge, total: ranking.fused + bridge, window: ranking.window, kept: ranking.kept };
+  }
+
+  // One sentence on what the working-memory gate did for this question.
+  function gateSummary(question) {
+    const gateEvent = question.gate.raw && question.gate.raw.P1f_gate;
+    if (!gateEvent) return "Not engaged: this question was asked outside a conversation session";
+    if (!gateEvent.should_retrieve) return `Nothing fetched: the memories in play already cover the ${gateEvent.topics} topics`;
+    if (gateEvent.covered) return `${gateEvent.covered} of ${gateEvent.topics} topics already in play, ${gateEvent.topics - gateEvent.covered} fetched from long-term memory`;
+    return `Empty buffer: all ${plural(gateEvent.topics, "topic")} fetched from long-term memory`;
   }
 
   function renderStages(question) {
@@ -222,15 +251,7 @@
     const working = gate.raw && gate.raw.P1g_working;
 
     // 1. Gate
-    const fresh = gateEvent ? gateEvent.topics - gateEvent.covered : 0;
-    const gateSummary = !gateEvent
-      ? "Not engaged: this question was asked outside a conversation session"
-      : !gateEvent.should_retrieve
-        ? `Nothing fetched: the memories in play already cover the ${gateEvent.topics} topics`
-        : gateEvent.covered
-          ? `${gateEvent.covered} of ${gateEvent.topics} topics already in play, ${fresh} fetched from long-term memory`
-          : `Empty buffer: all ${plural(gateEvent.topics, "topic")} fetched from long-term memory`;
-    stages.push(stage(1, "Working-memory gate", null, gateSummary, [
+    stages.push(stage(1, "Working-memory gate", null, gateSummary(question), [
       simple(p("The assistant keeps a short list of the memories already in play in the current conversation. A new question only sends it back to the long-term store for what that list does not cover.")),
       tech(p("The gate engages when the host passes a session id. It compares the query's topics with the session buffer (capacity 48, activation decaying at each turn) and fetches only the uncovered topics. The host receives the rendered buffer.")),
       gateEvent ? kv([
@@ -246,11 +267,7 @@
     // 2. Topics
     const fetched = new Set(topics.items.map((topic) => topic.label));
     const matches = Object.fromEntries(topics.items.map((topic) => [topic.label, topic.match]));
-    const recognised = [];
-    for (const hit of topics.terms.filter((term) => term.kept).sort((a, b) => b.score - a.score)) {
-      if (!recognised.some((row) => row.label === hit.label)) recognised.push(hit);
-    }
-    if (!recognised.length) topics.items.forEach((topic) => recognised.push({ term: topic.term, label: topic.label, score: topic.score }));
+    const recognised = recognisedTopics(question);
     const partial = recognised.some((row) => !fetched.has(row.label));
     stages.push(stage(2, "Topics", topics.ms, `${plural(recognised.length, "topic")} recognised: ${recognised.map((row) => row.label).join(", ")}`, [
       simple(p("The words of the question are compared, by meaning, with every concept the memory knows. The closest concepts become the entry points into the graph.")),
@@ -277,18 +294,20 @@
 
     // 4. Ranking
     const rows = (ranking.rows || []).slice(0, 10);
+    const pool = candidates(question);
     const funnel = [
-      [ranking.pool, "reached through the graph"],
-      [ranking.admitted, "added because they are close in meaning"],
-      [ranking.fused, "candidates merged"],
-      [ranking.window, "read against the question"],
-      [ranking.kept, "kept"],
-    ].filter((step) => step[0] !== undefined && step[0] !== null);
-    stages.push(stage(4, "Ranking", ranking.ms, `${num(ranking.fused)} candidates, ${num(ranking.kept)} kept`, [
-      simple(p("The graph is not the only way in: memories whose wording is close to the question are added too. All candidates are then ordered by importance, recency and use, and a small reading model compares the best ones with the question to keep those that actually bear on it.")),
-      tech(p(`The graph pool is fused with a dense content channel (${num(ranking.content_hits)} hits, ${num(ranking.admitted)} new) by reciprocal rank fusion (k = ${ranking.rrf_k}), ordered by salience and topic affinity, then a cross-encoder (${ranking.model}) scores a window of ${ranking.window} and elects ${ranking.kept}.`)),
+      [pool.graph, "reached through the graph", null],
+      [pool.meaning, "added because they are close in meaning", "+"],
+      pool.bridge ? [pool.bridge, "added because they share a topic with the best ones", "+"] : null,
+      [pool.total, "candidates", "="],
+      [pool.window, "read against the question", "→"],
+      [pool.kept, "kept", "→"],
+    ].filter((step) => step && step[0] !== undefined && step[0] !== null);
+    stages.push(stage(4, "Ranking", ranking.ms, `${num(pool.total)} candidates, ${num(pool.kept)} kept`, [
+      simple(p("The graph is not the only way in: memories whose wording is close to the question are added too. All candidates are then ordered together by importance, recency and use, and the best are kept. A small reading model then compares the kept ones with the question, to put first those that bear on it.")),
+      tech(p(`The graph pool is fused with a dense content channel (${num(ranking.content_hits)} hits, ${num(ranking.admitted)} new) by reciprocal rank fusion (k = ${ranking.rrf_k}), ordered by salience and topic affinity${pool.bridge ? `, joined by ${num(pool.bridge)} memories filed under the other topics of the best candidates (bridge)` : ""}, then a cross-encoder (${ranking.model}) scores a window of ${ranking.window} and elects ${ranking.kept}.`)),
       h("div", { class: "flow" }, funnel.flatMap((step, index) => [
-        index ? h("span", { class: "arr", "aria-hidden": "true" }, index === 1 ? "+" : "→") : null,
+        index ? h("span", { class: "arr", "aria-hidden": "true" }, step[2]) : null,
         h("span", { class: "box" }, num(step[0]), h("small", {}, step[1])),
       ])),
       rows.length ? h("div", { class: "tablewrap" }, h("table", { class: "t" },
@@ -296,7 +315,7 @@
         h("tbody", {}, rows.map((row, index) => h("tr", {},
           h("td", { class: "num" }, index + 1),
           h("td", {}, (DATA.memories[row.mem] || {}).content || row.mem),
-          h("td", {}, row.via),
+          h("td", {}, row.via === "meaning" && pool.bridge ? "meaning or shared topic" : row.via),
           h("td", { class: "num tech" }, row.before))),
         ranking.kept > rows.length ? h("tr", { class: "cut" }, h("td", { colspan: "4" }, `and ${num(ranking.kept - rows.length)} more kept`)) : null))) : null,
       rows.length ? h("p", { class: "note tech" }, "“Rank before” is the position before the cross-encoder: it shows how far the reading model moved each memory.") : null,
@@ -542,7 +561,14 @@
   renderQuestions();
   renderMaintenance();
   renderStore();
-  const fromHash = /^#q(\d+)$/.exec(location.hash);
+  // "#q5" selects a question; "#q5-3" also names a beat of the presenter mode (read by present.js).
+  const fromHash = /^#q(\d+)(?:-\d+)?$/.exec(location.hash);
   const start = fromHash ? Math.min(DATA.questions.length, Math.max(1, Number(fromHash[1]))) - 1 : 0;
   selectQuestion(start, false);
+
+  // Shared with present.js, which renders the same recordings on a 16:9 canvas.
+  window.KGAPP = {
+    DATA, meta, state, h, num, plural, ms, shortDate, code, kv, conceptPill, bipartite, markQuote,
+    recognisedTopics, gateSummary, candidates, VERDICTS, PASSES, setLevel, selectQuestion,
+  };
 })();
