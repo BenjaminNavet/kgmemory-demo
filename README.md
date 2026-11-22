@@ -14,17 +14,17 @@ SHACL, PROV-O, OWL-Time, Web Annotation).
 ## Presenting it
 
 `v3/` has a presenter mode for a talk or a screen share: open
-<https://benjaminnavet.github.io/kgmemory-demo/v3/?present>, or press `P` on the page. Ten
-slides drawn from the same recording go through the whole demo: the data (which benchmark,
-which conversation, where the questions come from), how the memory is built, the six
-questions and why these, one question worked through (its answers, the memories handed to the
-model, how they were found, the source of one memory), the six side by side, the upkeep of
-the memory. Each slide states one fact in plain words and defines the terms it uses.
+<https://benjaminnavet.github.io/kgmemory-demo/v3/?present>, or press `P` on the page. Five
+slides drawn from the same recording show how KGmemory works, on one LoCoMo question followed
+from end to end: an overview (the conversation and the three steps), write (a message, the
+memory written from it, its concepts), find (the memories picked for the question), answer
+(the model alone and with its memory), and the result on the six questions. Each slide states
+one fact in plain words and defines the terms it uses. About a minute and a half aloud.
 
 | Key | Effect |
 |---|---|
 | `→` `Space` / `←` | next / previous slide |
-| `1` to `6` | change the question worked through |
+| `1` to `6` | change the question followed |
 | `T` | Simple or Technical level |
 | `C` | clock |
 | `Esc` | back to the page |
