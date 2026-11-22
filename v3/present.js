@@ -1,8 +1,9 @@
 /* KGmemory glass box — presenter mode.
-   A guided tour of the selected question on a fixed 1920×1080 canvas, for a shared screen: nine beats over the
-   whole demo (every question, one worked through, the upkeep of the store), one picture, diagram or graph and one
-   short headline each, keyboard driven, no scrolling, no animation. Headlines are narration; every number,
-   sentence and identifier still comes from window.KGDEMO. Design: docs/superpowers/specs/2026-11-22-kgmemory-demo-v3-presenter-design.md */
+   A guided tour of the whole demo on a fixed 1920×1080 canvas, for a shared screen: ten beats (the data, the
+   memory, every question, one worked through, the upkeep), each with one headline in plain words, one lede that
+   gives the context or the definitions needed, and one picture, diagram or graph. Keyboard driven, no scrolling,
+   no animation. Headlines and ledes are narration; every number, sentence and identifier still comes from
+   window.KGDEMO. Design: docs/superpowers/specs/2026-11-22-kgmemory-demo-v3-presenter-design.md */
 (function () {
   "use strict";
 
@@ -32,6 +33,13 @@
   const words = (text) => String(text).trim().split(/\s+/).filter(Boolean).length;
   const spokenSeconds = (text) => Math.ceil((words(text) / WORDS_PER_MINUTE) * 60) + PAUSE_SECONDS;
   const tech = (...children) => h("div", { class: "tech" }, ...children);
+  const setting = (name) => ((meta.settings || []).find((row) => row.name === name) || {}).value;
+  // "*term*" in a sentence marks a term being defined: set in bold on the canvas, read plain everywhere else.
+  const rich = (text) => String(text).split(/\*([^*]+)\*/).map((part, index) => (index % 2 ? h("b", {}, part) : part));
+  const plain = (text) => String(text || "").replace(/\*/g, "");
+  // A strip of definitions under a picture: [term, what it means, colour of the mark it explains, reading level].
+  const definitions = (rows) => h("div", { class: "ddefs" }, rows.filter(Boolean).map(([term, meaning, colour, level]) => h("div", { class: "ddef" + (level ? " " + level : "") },
+    colour ? h("i", { style: `background:${colour}`, "aria-hidden": "true" }) : null, h("p", {}, h("b", {}, term), " ", meaning))));
 
   // The memory shown in the provenance beats: the first served one whose anchored quote is found verbatim in its passage.
   function spotlight(question) {
@@ -67,7 +75,7 @@
     return node;
   }
 
-  const COLOURS = { graph: "#6941eb", shared: "#b79cf7", meaning: "#0d7c8c", ink: "#00284b", memory: "#b8661a", grey: "#7a8490", ring: "#e0a800" };
+  const COLOURS = { graph: "#6941eb", shared: "#b79cf7", meaning: "#0d7c8c", ink: "#00284b", memory: "#b8661a", grey: "#7a8490", other: "#8a9bb0", ring: "#e0a800" };
 
   // Line icons on a 48 × 48 grid, drawn in the current colour: [tag, attributes] per stroke.
   const DOT = { fill: "currentColor" };
@@ -151,7 +159,7 @@
   }
   const share = (part, whole) => (part === whole ? `all ${num(whole)}` : `${num(part)} of the ${num(whole)}`);
   const capital = (text) => text.charAt(0).toUpperCase() + text.slice(1);
-  const stampLine = () => `KGmemory · recorded run · ${shortDate(meta.recorded_on)} · ${meta.corpus.name} ${meta.corpus.item}: ${meta.corpus.speakers.join(" & ")}, ${meta.corpus.sessions} sessions · ${num(meta.counts.memories)} memories`;
+  const stampLine = () => `Recording of ${shortDate(meta.recorded_on)}: nothing runs live · Data: ${meta.corpus.name} benchmark, conversation of ${meta.corpus.speakers.join(" and ")}`;
 
   // Where the candidates and the kept memories came from. The recording tells which kept memories were in the pool of
   // the graph query; those added through a shared topic are counted but not listed, so the share found by meaning is
@@ -234,7 +242,7 @@
   function memoryGraph(question, traced) {
     const graph = servedGraph(question);
     const asked = new Set(APP.recognisedTopics(question).map((row) => row.label));
-    const WIDTH = 1728, HEIGHT = 580, PAD_X = 60, PAD_Y = 52, MEMORY_RADIUS = 11;
+    const WIDTH = 1728, HEIGHT = 520, PAD_X = 60, PAD_Y = 48, MEMORY_RADIUS = 11;
     const radius = (index) => (index < graph.memories.length ? MEMORY_RADIUS : Math.min(40, 9 + 4.5 * Math.sqrt(graph.concepts[index - graph.memories.length].degree)));
     const points = graph.positions.map((position, index) => ({
       x: PAD_X + position.x * (WIDTH - 2 * PAD_X), y: PAD_Y + position.y * (HEIGHT - 2 * PAD_Y), r: radius(index),
@@ -297,17 +305,21 @@
   }
 
   // ---------- the search, drawn to scale ----------
+  // The three ways a memory becomes a candidate, named the same way on every beat.
+  const ROUTES = {
+    graph: { name: "through the graph", colour: COLOURS.graph },
+    shared: { name: "by a shared topic", colour: COLOURS.shared },
+    meaning: { name: "close in meaning", colour: COLOURS.meaning },
+  };
+
   // The routes in, the candidates, the kept ones and where they came from.
   function flowDiagram(question) {
     const from = origins(question);
     const { pool } = from;
-    const WIDTH = 1728, HEIGHT = 520, TOP = 76, BAR = 120, GAP = 18, MIN = 14, ROW = 62;
-    const x = { routes: 430, all: 750, kept: 1050, legend: 1210 };
-    const routes = [
-      { count: pool.graph, label: "graph query", colour: COLOURS.graph },
-      { count: pool.bridge, label: "shared topic", colour: COLOURS.shared },
-      { count: pool.meaning, label: "close in meaning", colour: COLOURS.meaning },
-    ].filter((route) => route.count > 0);
+    const WIDTH = 1728, HEIGHT = 420, TOP = 70, BAR = 120, GAP = 16, MIN = 14, ROW = 62;
+    const x = { routes: 470, all: 780, kept: 1070, legend: 1250 };
+    const routes = [[pool.graph, ROUTES.graph], [pool.bridge, ROUTES.shared], [pool.meaning, ROUTES.meaning]]
+      .filter(([count]) => count > 0).map(([count, route]) => ({ count, label: route.name, colour: route.colour }));
     const room = HEIGHT - TOP;
     // One scale for every bar. A route too small for its label still gets a full row, taken from the others.
     let scale = (room - GAP * (routes.length - 1)) / pool.total;
@@ -321,7 +333,7 @@
     const allHeight = pool.total * scale;
     const allTop = TOP + (room - allHeight) / 2;
     const svg = s("svg", { viewBox: `0 0 ${WIDTH} ${HEIGHT}`, class: "dflow", role: "img",
-      "aria-label": `${pool.total} candidates from ${routes.length} routes, ${pool.kept} kept` });
+      "aria-label": `${pool.total} candidates found in ${routes.length} ways, ${pool.kept} kept` });
     const header = (left, strong, rest) => svg.append(s("text", { x: left + BAR / 2, y: 38, class: "dhead", "text-anchor": "middle" }, s("tspan", { class: "strong" }, strong), rest));
     header(x.all, num(pool.total), " candidates");
     header(x.kept, num(pool.kept), " kept");
@@ -346,14 +358,13 @@
     const allRight = x.all + BAR;
     svg.append(s("path", { class: "dband", fill: COLOURS.ink,
       d: `M${allRight} ${allTop} C ${allRight + 100} ${allTop}, ${x.kept - 100} ${keptTop}, ${x.kept} ${keptTop} L ${x.kept} ${keptTop + keptHeight} C ${x.kept - 100} ${keptTop + keptHeight}, ${allRight + 100} ${allTop + allHeight}, ${allRight} ${allTop + allHeight} Z` }));
-    // The kept bar, split by origin; the shared-topic part is hatched when the recording only bounds it.
-    svg.append(s("defs", {}, s("pattern", { id: "dhatch", width: 14, height: 14, patternUnits: "userSpaceOnUse", patternTransform: "rotate(45)" },
-      s("rect", { width: 14, height: 14, fill: COLOURS.meaning }), s("rect", { width: 7, height: 14, fill: COLOURS.shared }))));
-    const parts = [
-      { count: from.keptGraph, fill: COLOURS.graph, label: `${num(from.keptGraph)} from the graph query`, always: true },
-      { count: from.keptShared, fill: from.exact ? COLOURS.shared : "url(#dhatch)", label: `${from.exact ? "" : "at most "}${num(from.keptShared)} by a shared topic` },
-      { count: from.keptMeaning, fill: COLOURS.meaning, label: `${from.exact ? "" : "at least "}${num(from.keptMeaning)} by meaning` },
-    ];
+    // The kept bar, split by where its memories came from. The recording lists the kept memories that came through
+    // the graph; the two other ways are told apart only when it allows it (see origins), and drawn together otherwise.
+    const others = pool.kept - from.keptGraph;
+    const parts = [{ count: from.keptGraph, fill: COLOURS.graph, label: `${from.keptGraph ? num(from.keptGraph) : "none"} ${ROUTES.graph.name}`, always: true }].concat(from.exact
+      ? [{ count: from.keptShared, fill: COLOURS.shared, label: `${num(from.keptShared)} ${ROUTES.shared.name}` },
+        { count: from.keptMeaning, fill: COLOURS.meaning, label: `${num(from.keptMeaning)} ${ROUTES.meaning.name}` }]
+      : [{ count: others, fill: COLOURS.other, label: `${num(others)} by the other two ways` }]);
     let partY = keptTop;
     for (const part of parts) {
       const tall = (part.count / pool.kept) * keptHeight;
@@ -362,21 +373,23 @@
     }
     svg.append(s("rect", { x: x.kept, y: keptTop, width: BAR, height: keptHeight, rx: 6, fill: "none", stroke: COLOURS.ink, "stroke-width": 6 }));
     const legend = parts.filter((part) => part.count > 0 || part.always);
-    const LINE = 58;
-    const legendTop = Math.min(HEIGHT - legend.length * LINE, Math.max(TOP, keptTop + keptHeight / 2 - (legend.length * LINE) / 2));
+    const LINE = 54, HEAD = 52;
+    const tall = HEAD + legend.length * LINE;
+    const legendTop = Math.min(HEIGHT - tall - 12, Math.max(TOP, keptTop + keptHeight / 2 - tall / 2));
     // A frame the annotated stills can ring: the legend is where the finding of the beat is read.
-    svg.append(s("rect", { class: "dframe", x: x.legend - 22, y: legendTop - 10, width: WIDTH - x.legend + 10, height: legend.length * LINE + 22, rx: 16 }));
+    svg.append(s("rect", { class: "dframe", x: x.legend - 22, y: legendTop - 12, width: WIDTH - x.legend + 10, height: tall + 20, rx: 16 }));
+    svg.append(s("text", { x: x.legend, y: legendTop + 30, class: "dlabel strong" }, `Of the ${num(pool.kept)} kept:`));
     legend.forEach((part, index) => {
-      const top = legendTop + index * LINE;
-      svg.append(s("rect", { x: x.legend, y: top + 10, width: 34, height: 34, rx: 6, fill: part.count ? part.fill : "#fff", stroke: part.count ? "none" : COLOURS.graph, "stroke-width": 4 }));
-      svg.append(s("text", { x: x.legend + 50, y: top + 38, class: "dlabel" }, part.label));
+      const top = legendTop + HEAD + index * LINE;
+      svg.append(s("rect", { x: x.legend, y: top + 6, width: 34, height: 34, rx: 6, fill: part.count ? part.fill : "#fff", stroke: part.count ? "none" : COLOURS.graph, "stroke-width": 4 }));
+      svg.append(s("text", { x: x.legend + 50, y: top + 34, class: "dlabel" }, part.label));
     });
     return svg;
   }
 
   // ---------- one memory and everything the graph holds about where it comes from ----------
-  // Fixed geometry on a 1728 × 560 stage: the boxes are HTML, the named edges are drawn under them.
-  const PROV = { said: { left: 0, width: 600 }, memory: { left: 730, top: 24, width: 580, height: 330 }, about: { left: 1420, width: 308, height: 76, pitch: 92 }, records: { top: 442, height: 116, width: 460, lefts: [110, 790, 1268] } };
+  // Fixed geometry on a 1728 × 514 stage: the boxes are HTML, the named edges are drawn under them.
+  const PROV = { height: 514, said: { left: 0, width: 600 }, memory: { left: 730, top: 20, width: 580, height: 300 }, about: { left: 1420, width: 308, height: 76, pitch: 92 }, records: { top: 404, height: 110, width: 460, lefts: [110, 790, 1268] } };
   function provenanceGraph(memory, quoteTurn, speaker, badges) {
     const about = (memory.subjects || []).slice(0, 3);
     const middle = PROV.memory.top + PROV.memory.height / 2;
@@ -389,12 +402,12 @@
     const down = (index) => (recordX(index) === centre ? `M${centre} ${bottom}V${PROV.records.top - 8}`
       : `M${centre} ${bottom} C ${centre} ${bottom + 52}, ${recordX(index)} ${bottom + 34}, ${recordX(index)} ${PROV.records.top - 8}`);
     return h("div", { class: "dprov" },
-      s("svg", { viewBox: "0 0 1728 560", class: "dprov-edges", "aria-hidden": "true" },
+      s("svg", { viewBox: `0 0 1728 ${PROV.height}`, class: "dprov-edges", "aria-hidden": "true" },
         s("defs", {}, s("marker", { id: "dtip", viewBox: "0 0 12 12", refX: 9, refY: 6, markerWidth: 5, markerHeight: 5, orient: "auto" }, s("path", { d: "M1 1 11 6 1 11z", fill: COLOURS.ink }))),
         edge(`M${PROV.memory.left} ${middle}H${PROV.said.left + PROV.said.width + 10}`),
         about.map((_, index) => edge(`M${right} ${middle} C ${right + 80} ${middle}, ${PROV.about.left - 80} ${aboutY(index)}, ${PROV.about.left - 8} ${aboutY(index)}`)),
         badges.map((_, index) => edge(down(index))),
-        name((PROV.said.left + PROV.said.width + PROV.memory.left) / 2, middle + 9, "quote"),
+        name((PROV.said.left + PROV.said.width + PROV.memory.left) / 2, middle + 9, "source"),
         about.length ? name((right + PROV.about.left) / 2, middle + 9, "about") : null,
         badges.map(([, , , label], index) => name((centre + recordX(index)) / 2, bottom + 54, label))),
       h("div", { class: "dnode said", style: `left:${PROV.said.left}px;top:${middle}px;width:${PROV.said.width}px` },
@@ -412,25 +425,27 @@
   const knowsAlone = (item) => !/\b(don't|do not) know\b/i.test(item.answer_without);
   const MARKS = { unknown: "?", match: "✓", trap: "✓", miss: "✕" };
   const mark = (kind) => h("span", { class: "dmark " + kind, "aria-hidden": "true" }, MARKS[kind]);
-  const hatch = (id) => s("defs", {}, s("pattern", { id, width: 14, height: 14, patternUnits: "userSpaceOnUse", patternTransform: "rotate(45)" },
-    s("rect", { width: 14, height: 14, fill: COLOURS.meaning }), s("rect", { width: 7, height: 14, fill: COLOURS.shared })));
 
-  // Every question on one chart: the memories given, split by where they came from, and how many carry their quote.
+
+  // Every question on one chart: the memories handed over, by how they were found, and how many keep their quote.
+  // Two parts only: the recording lists the kept memories that came through the graph, and does not always tell
+  // which of the two other ways brought the others.
   function acrossChart(focus) {
     const rows = DATA.questions.map((item) => ({ item, from: origins(item), facts: served(item) }));
-    const WIDTH = 1728, ROW = 86, TOP = 78, HEIGHT = TOP + rows.length * ROW;
+    const WIDTH = 1728, ROW = 84, TOP = 76, HEIGHT = TOP + rows.length * ROW;
     const x = { chip: 30, text: 74, bar: 730, quoted: 1470 }, BAR = 620, THICK = 44;
     const scale = BAR / Math.max(...rows.map((row) => row.from.pool.kept));
-    const bounded = rows.some((row) => !row.from.exact && row.from.keptShared);
+    const sum = (pick) => rows.reduce((count, row) => count + pick(row), 0);
+    const graphAll = sum((row) => row.from.keptGraph), keptAll = sum((row) => row.from.pool.kept);
     const svg = s("svg", { viewBox: `0 0 ${WIDTH} ${HEIGHT}`, class: "dacross", role: "img",
-      "aria-label": `${rows.length} questions: memories given by origin, and how many trace back to a quote` }, hatch("dhatch-all"));
-    const key = [[COLOURS.graph, "graph query"], [bounded ? "url(#dhatch-all)" : COLOURS.shared, bounded ? "shared topic, at most" : "shared topic"], [COLOURS.meaning, "meaning"]];
+      "aria-label": `${rows.length} questions: memories handed over by how they were found, and how many keep their quote` });
+    const key = [[COLOURS.graph, `found ${ROUTES.graph.name}: ${num(graphAll)}`], [COLOURS.other, `found the other two ways: ${num(keptAll - graphAll)}`]];
     let keyX = x.text;
     for (const [fill, label] of key) {
       svg.append(s("rect", { x: keyX, y: 14, width: 30, height: 30, rx: 5, fill }), s("text", { class: "dlabel", x: keyX + 42, y: 39 }, label));
       keyX += 42 + label.length * 14.5 + 34;
     }
-    svg.append(s("text", { class: "dlabel strong", x: x.quoted, y: 39 }, "with a quote"));
+    svg.append(s("text", { class: "dlabel strong", x: x.quoted, y: 39 }, "with their quote"));
     // A frame the annotated stills can ring: the column every row agrees on.
     svg.append(s("rect", { class: "dframe", x: x.quoted - 22, y: 4, width: WIDTH - x.quoted + 16, height: HEIGHT - 8, rx: 16 }));
     rows.forEach(({ item, from, facts }, index) => {
@@ -439,7 +454,7 @@
       svg.append(s("circle", { class: "dchip-dot " + item.verdict, cx: x.chip, cy: middle, r: 24 }), s("text", { class: "dchip-num", x: x.chip, y: middle + 10, "text-anchor": "middle" }, index + 1));
       svg.append(s("text", { class: "dlabel", x: x.text, y: middle + 10 }, clip(item.text, 40)));
       let at = x.bar;
-      for (const [count, fill] of [[from.keptGraph, COLOURS.graph], [from.keptShared, from.exact ? COLOURS.shared : "url(#dhatch-all)"], [from.keptMeaning, COLOURS.meaning]]) {
+      for (const [count, fill] of [[from.keptGraph, COLOURS.graph], [from.pool.kept - from.keptGraph, COLOURS.other]]) {
         if (count) svg.append(s("rect", { x: at, y: middle - THICK / 2, width: count * scale, height: THICK, fill }));
         at += count * scale;
       }
@@ -449,7 +464,7 @@
     return svg;
   }
 
-  // The outcome sentence of an upkeep pass, cut where it breathes: the number, what was counted, and the first result
+  // The outcome sentence of an upkeep job, cut where it breathes: the number, what was counted, and the first result
   // that follows when it is itself a count. Nothing is reworded.
   function passFigures(outcome) {
     const [head, next = ""] = outcome.split(/[:,.]\s+/);
@@ -457,38 +472,53 @@
     return { number: counted ? counted[1] : "", counted: counted ? counted[2] : head, then: /^\d/.test(next) ? next.replace(/\.$/, "") : "" };
   }
 
-  // The store in the middle, the passes around it. Fixed geometry on a 1728 × 590 stage.
+  // What each upkeep job asks of the memory, as one plain question: the recording carries the answers, not the questions.
+  const PASS_ASKS = {
+    revision: "Is a fact outdated?",
+    contradiction: "Do two facts contradict?",
+    forgetting: "Is a memory still useful?",
+    abstraction: "Can memories be summed up?",
+    associations: "Which concepts go together?",
+  };
   const PASS_ICONS = { revision: "refresh", contradiction: "clash", forgetting: "clock", abstraction: "layers", associations: "link" };
-  const UPKEEP = { corner: { width: 520, height: 285 }, centre: { left: 604, top: 370, width: 520, height: 220 }, slots: [[0, 0], [1208, 0], [0, 305], [1208, 305]] };
+  // A 3 × 2 grid on a 1728 × 616 stage: the memory in the middle of the top row, the jobs in the five other cells.
+  const UPKEEP = { height: 616, card: { width: 520, height: 290 }, columns: [0, 604, 1208], rows: [0, 326], cells: [[0, 0], [2, 0], [0, 1], [1, 1], [2, 1]] };
   const passTitle = (pass) => (APP.PASSES[pass.key] || { title: pass.key }).title.replace(/ between .*$/, ""); // the figure says the rest
   function upkeepDiagram() {
-    const passes = DATA.maintenance.map((pass) => ({ ...pass, ...passFigures(pass.outcome) }));
-    // The pass with the least to say takes the smaller box under the store; the others keep their order.
-    const brief = passes.length > UPKEEP.slots.length ? [...passes].sort((a, b) => (a.counted + a.then).length - (b.counted + b.then).length)[0] : null;
-    const around = passes.filter((pass) => pass !== brief).slice(0, UPKEEP.slots.length);
-    const hub = { x: 864, top: 78, bottom: 300, left: 724, right: 1004, middle: 190 };
-    const card = (pass, style) => h("div", { class: "dnode dpass", style },
-      h("div", { class: "dwho" }, icon(PASS_ICONS[pass.key] || "check", 52), h("span", {}, passTitle(pass))),
-      h("p", { class: "dfig" }, pass.number ? h("b", {}, pass.number) : null, " ", pass.counted),
-      pass.then ? h("p", { class: "dthen" }, pass.then) : null);
+    const { card, columns, rows, cells } = UPKEEP;
+    const passes = DATA.maintenance.slice(0, cells.length).map((pass) => ({ ...pass, ...passFigures(pass.outcome) }));
+    const hub = { left: columns[1], right: columns[1] + card.width, bottom: rows[0] + card.height, x: columns[1] + card.width / 2, middle: rows[0] + card.height / 2 };
+    const place = ([column, row]) => `left:${columns[column]}px;top:${rows[row]}px;width:${card.width}px;height:${card.height}px`;
+    // Every job points at the memory: straight from its neighbours, across the gap between the rows from below.
+    const arrow = ([column, row]) => {
+      if (row === 0) return column === 0 ? `M${card.width + 8} ${hub.middle}H${hub.left - 14}` : `M${columns[2] - 8} ${hub.middle}H${hub.right + 14}`;
+      if (column === 1) return `M${hub.x} ${rows[1] - 4}V${hub.bottom + 14}`;
+      return column === 0 ? `M${card.width + 6} ${rows[1] - 2}L${hub.left - 12} ${hub.bottom + 8}` : `M${columns[2] - 6} ${rows[1] - 2}L${hub.right + 12} ${hub.bottom + 8}`;
+    };
     return h("div", { class: "dupkeep" },
-      s("svg", { viewBox: "0 0 1728 590", class: "dprov-edges", "aria-hidden": "true" },
+      s("svg", { viewBox: `0 0 1728 ${UPKEEP.height}`, class: "dprov-edges", "aria-hidden": "true" },
         s("defs", {}, s("marker", { id: "dtip-in", viewBox: "0 0 12 12", refX: 9, refY: 6, markerWidth: 5, markerHeight: 5, orient: "auto" }, s("path", { d: "M1 1 11 6 1 11z", fill: COLOURS.ink }))),
-        around.map((_, index) => {
-          const [left, top] = UPKEEP.slots[index];
-          const fromX = left ? left - 6 : UPKEEP.corner.width + 6, fromY = top + UPKEEP.corner.height / 2, toX = left ? hub.right + 10 : hub.left - 10;
-          return s("path", { class: "dprov-edge", "marker-end": "url(#dtip-in)", d: `M${fromX} ${fromY} C ${(fromX + toX) / 2} ${fromY}, ${(fromX + toX) / 2} ${hub.middle}, ${toX} ${hub.middle}` });
-        }),
-        brief ? s("path", { class: "dprov-edge", "marker-end": "url(#dtip-in)", d: `M${hub.x} ${UPKEEP.centre.top - 6}V${hub.bottom + 12}` }) : null),
-      h("div", { class: "dnode dstore", style: `left:${hub.left - 60}px;top:0;width:${hub.right - hub.left + 120}px` },
+        passes.map((_, index) => s("path", { class: "dprov-edge", "marker-end": "url(#dtip-in)", d: arrow(cells[index]) }))),
+      h("div", { class: "dnode dstore", style: place([1, 0]) },
         h("div", { class: "dcount" }, h("span", {}, h("b", {}, num(meta.counts.memories)), " memories")), clusterPicture()),
-      around.map((pass, index) => card(pass, `left:${UPKEEP.slots[index][0]}px;top:${UPKEEP.slots[index][1]}px;width:${UPKEEP.corner.width}px;height:${UPKEEP.corner.height}px`)),
-      brief ? card(brief, `left:${UPKEEP.centre.left}px;top:${UPKEEP.centre.top}px;width:${UPKEEP.centre.width}px;height:${UPKEEP.centre.height}px`) : null);
+      passes.map((pass, index) => h("div", { class: "dnode dpass", style: place(cells[index]) },
+        h("div", { class: "dwho" }, icon(PASS_ICONS[pass.key] || "check", 44), h("span", {}, passTitle(pass))),
+        PASS_ASKS[pass.key] ? h("p", { class: "dask" }, PASS_ASKS[pass.key]) : null,
+        h("p", { class: "dfig" }, pass.number ? h("b", {}, pass.number) : null, " ", pass.counted),
+        pass.then ? h("p", { class: "dthen" }, pass.then) : null)));
   }
 
-  // ---------- the nine beats: the whole demo, with one question worked through ----------
+  // ---------- the ten beats: the whole demo, with one question worked through ----------
   // scope "demo" beats are the same whatever the question; scope "question" beats work through the question shown,
-  // which keys 1 to 6 change without leaving the beat.
+  // which keys 1 to 6 change without leaving the beat. A beat is a headline (one fact, in plain words), a lede (the
+  // context and the definitions needed to read the picture: "*term*" marks a term being defined) and the picture.
+
+  // What a viewer needs and the recording does not carry: what the benchmark is (Maharana et al., 2024), and how the
+  // questions shown were chosen (twelve were recorded, the only miss among them; six were kept, one per kind).
+  const BENCHMARK = { authors: "Maharana et al.", year: 2024, recorded: 12 };
+  const VERDICT_WORDS = { match: "right answer", trap: "trap avoided", miss: "missed" };
+  const VERDICT_SENTENCES = { match: "same as the expected answer", trap: "does not fall for the trap", miss: "misses the expected answer" };
+
   function buildBeats(question) {
     const facts = served(question);
     const total = facts.total;
@@ -497,13 +527,15 @@
     const { pool } = from;
     const corpus = meta.corpus, counts = meta.counts;
     const everyone = DATA.questions;
+    const people = corpus.speakers.join(" and ");
+    const limit = setting("RETRIEVE_K") || Math.max(...everyone.map((item) => item.served.length));
     const memory = spotlight(question);
     const activity = DATA.activities[memory.activity] || {};
     const quoteTurn = (memory.turns || []).find((turn) => memory.quote && turn.text.includes(memory.quote)) || (memory.turns || [])[0];
     const speaker = quoteTurn && /^[A-Za-z]/.test(quoteTurn.speaker) ? quoteTurn.speaker : null;
-    const noteLead = question.note ? leadSentence(question.note)[0] : "";
+    // The note of the recording, in the words of the tour: "the memory" for the store, "handed to the model" for served.
+    const note = (question.note || "").replace(/^Missed\.\s*/, "").replace(/\bstore\b/g, "memory").replace(/\bserved\b/g, "handed to the model");
     const aloneUnknown = !knowsAlone(question);
-    const graphShare = `${from.keptGraph ? num(from.keptGraph) : "none"} from the graph query`;
     const beats = [];
     const add = (beat) => beats.push({ ...beat, seconds: spokenSeconds(beat.say) });
 
@@ -511,170 +543,222 @@
     const tally = (verdict) => everyone.filter((item) => item.verdict === verdict).length;
     const matches = tally("match"), traps = tally("trap"), misses = tally("miss");
     const aloneAnswered = everyone.filter(knowsAlone).length;
+    const alone = aloneAnswered ? num(aloneAnswered) : "none";
     const all = everyone.map((item) => ({ from: origins(item), facts: served(item) }));
     const sum = (pick) => all.reduce((count, row) => count + pick(row), 0);
     const servedAll = sum((row) => row.facts.total), quotedAll = sum((row) => row.facts.quoted), graphAll = sum((row) => row.from.keptGraph);
+    const everyQuote = quotedAll === servedAll;
     const few = (count, one, many) => (count === 1 ? `one ${one}` : `${num(count)} ${many}`);
 
-    // 1. Build: what KGmemory is, as a picture. The numbers are those of the recorded store.
+    // The pieces of the two opening pictures.
     const station = (cls, title, picture, big, label) => h("div", { class: "dstation " + cls },
       h("div", { class: "dtitle" }, title), h("div", { class: "dpicture" }, picture), h("div", { class: "dcount" }, h("b", {}, big), h("span", {}, label)));
     const pipeArrow = (iconName, label) => h("div", { class: "dpipe-arrow" }, h("span", {}, icon(iconName, 44), label),
       s("svg", { viewBox: "0 0 200 44", "aria-hidden": "true" }, s("path", { d: "M4 22H186M164 5 190 22 164 39" })));
+    const chatPicture = () => h("div", { class: "dchat" }, [0, 1, 0].map((who, row) => h("div", { class: "dturn" + (who ? " right" : "") },
+      avatar(speakerColour(corpus.speakers[who]), 56), h("span", { class: "dlines" }, h("i", {}), row === 1 ? null : h("i", { class: "short" })))));
+    const months = (span) => span.replace(" and ", " to ").replace(/([A-Z][a-z]{2})[a-z]+ (\d{4})/g, "$1 $2");
+
+    // 1. Data: which benchmark, which conversation, where the questions come from.
+    const example = everyone.filter((item) => item.verdict === "match").sort((a, b) => (a.text + a.reference).length - (b.text + b.reference).length)[0] || everyone[0];
     add({
-      id: "build", step: "Build", scope: "demo", anchor: "store", focus: ".dstation.graph",
-      headline: "A conversation becomes a graph of memories",
-      say: "A recording; nothing runs live. KGmemory writes a conversation as a graph of memories, and the assistant reads from it before answering.",
+      id: "data", step: "Data", scope: "demo", anchor: "ask", focus: ".dstation.talk",
+      headline: "The test: a long conversation, then questions about it",
+      lede: `The data is *${corpus.name}*, a public research benchmark (${BENCHMARK.year}) that tests whether an assistant remembers long conversations. We use one of its conversations, written for the benchmark, between two fictional people: ${people}.`,
+      say: `A recording; nothing runs live. The data is ${corpus.name}, a public benchmark: one long conversation between two fictional people, ${people}, and ${num(corpus.questions)} questions about it, each with its expected answer.`,
       body: () => [
         h("div", { class: "dpipe" },
-          station("talk", corpus.speakers.join(" & "),
-            h("div", { class: "dchat" }, [0, 1, 0].map((who, row) => h("div", { class: "dturn" + (who ? " right" : "") },
-              avatar(speakerColour(corpus.speakers[who]), 68), h("span", { class: "dlines" }, h("i", {}), row === 1 ? null : h("i", { class: "short" }))))),
-            num(corpus.turns), `messages, ${num(corpus.sessions)} sessions`),
-          pipeArrow("pen", "written as facts"),
-          station("graph", "Memory graph", clusterPicture(), num(counts.memories), `memories, ${num(counts.concepts)} concepts`),
-          pipeArrow("search", "read before answering"),
-          station("bot", "Assistant", [robot(true, 210), h("span", { class: "dthought" }, "?")], num(everyone.length), "recorded questions")),
-        tech(h("p", { class: "dtech" }, `${num(counts.quads)} RDF quads · ${num(counts.anchors)} quote anchors · ${num(counts.shapes)} SHACL shapes · ${num(counts.activities_total)} PROV activities`)),
+          station("talk", "The conversation", chatPicture(), num(corpus.turns), `messages in ${num(corpus.sessions)} chats, ${months(corpus.span)}`),
+          pipeArrow("chat", "the benchmark asks"),
+          station("asks", "Its questions",
+            h("div", { class: "dsample" }, h("p", { class: "dsample-q" }, `“${example.text}”`), h("p", {}, h("b", {}, "Expected: "), example.reference)),
+            num(corpus.questions), "questions, each with its expected answer"),
+          pipeArrow("check", "we show"),
+          station("bot", "This demo", [robot(true, 180), h("span", { class: "dthought" }, "?")], num(everyone.length), "of them, asked without and with KGmemory")),
+        definitions([
+          ["Benchmark:", "a shared test. Every system gets the same data and the same questions, so results can be compared."],
+          ["Expected answer:", "written by the authors of the benchmark. Each answer shown here is compared with it."],
+          ["Reference:", `${BENCHMARK.authors}, ${BENCHMARK.year} · item ${corpus.item} · licence ${corpus.licence}`, null, "tech"],
+        ]),
       ],
     });
 
-    // 2. Questions: the whole set at a glance; the one worked through next is outlined.
+    // 2. Memory: what KGmemory is and the three words the other beats rely on, with a real example.
+    const sample = spotlight(everyone[0]);
+    const sampleAbout = (sample.subjects || []).slice(0, 3).map((subject) => subject.label);
+    add({
+      id: "memory", step: "Memory", scope: "demo", anchor: "store", focus: ".dstation.graph",
+      headline: `KGmemory writes the conversation down as ${num(counts.memories)} facts`,
+      lede: "KGmemory is a memory for an AI assistant. A language model reads the conversation and writes each fact as one sentence, a *memory*, filed under what it is about, its *concepts*. Together they form a *graph*.",
+      say: "KGmemory writes that conversation down as short facts, called memories, each filed under the concepts it is about. Before answering, the assistant is handed the memories that fit the question.",
+      body: () => [
+        h("div", { class: "dpipe" },
+          station("talk", "The conversation", chatPicture(), num(corpus.turns), "messages"),
+          pipeArrow("pen", "written down as facts"),
+          station("graph", "The memory", clusterPicture(), num(counts.memories), `memories, filed under ${num(counts.concepts)} concepts`),
+          pipeArrow("search", "picked for each question"),
+          station("bot", "The assistant", [robot(true, 180), h("span", { class: "dthought" }, "?")], num(limit), "memories at most, handed over per question")),
+        definitions([
+          ["A memory:", `one fact, one sentence. For example: “${sample.content}”`, COLOURS.memory],
+          sampleAbout.length ? ["Its concepts:", `the people, places and topics it is about. Here: ${sampleAbout.join(", ")}.`, COLOURS.graph] : null,
+          ["The graph:", "memories linked to their concepts. Asking about a concept leads to its memories."],
+        ]),
+        tech(h("p", { class: "dtech" }, `${num(counts.quads)} RDF quads · ${num(counts.anchors)} quote anchors · ${num(counts.shapes)} SHACL shapes · ${num(counts.activities_total)} PROV activities · extraction by ${meta.models.extraction}`)),
+      ],
+    });
+
+    // 3. Questions: where they come from, why these, and the whole set at a glance; the one worked through is outlined.
     add({
       id: "questions", step: "Questions", scope: "demo", anchor: "ask", focus: ".dcard.now",
-      headline: `With its memory the model answers ${num(matches)} of the ${num(everyone.length)}; alone, ${aloneAnswered ? num(aloneAnswered) : "none"}`,
-      say: `${capital(few(everyone.length, "question was", "questions were"))} recorded. Alone, the model answers ${aloneAnswered ? num(aloneAnswered) : "none"}; with its memory, ${num(matches)}${traps ? `, plus ${few(traps, "trap", "traps")} avoided` : ""}${misses ? ` and ${few(misses, "miss", "misses")} kept on purpose` : ""}.`,
+      headline: `With its memory the model answers ${num(matches)} of ${num(everyone.length)}; alone, ${alone}`,
+      lede: `The questions are the benchmark's, not ours: we recorded ${num(BENCHMARK.recorded)} of its ${num(corpus.questions)} and show ${num(everyone.length)}, one per kind of difficulty${misses === 1 ? ", the only miss included" : ""}. *The model* is a large language model; *alone* means it never saw the conversation.`,
+      say: `We show ${num(everyone.length)} of the benchmark's questions, one per kind of difficulty${misses === 1 ? ", the only miss included" : ""}. Alone, the model answers ${alone}; with its memory, ${num(matches)}.`,
       body: () => [
         h("div", { class: "dboard" }, everyone.map((item, index) => h("div", { class: "dcard" + (item === question ? " now" : ""), onclick: () => showQuestion(index) },
           h("div", { class: "dcard-top" }, h("b", {}, index + 1), h("span", {}, item.text)),
+          item.tag ? h("p", { class: "dcard-tag" }, item.tag.replace(/ (\S+)$/, "\u00a0$1")) : null,
           h("div", { class: "dcard-row" },
-            h("span", { class: "dduo" }, robot(false, 104), mark(knowsAlone(item) ? "match" : "unknown")),
+            h("span", { class: "dduo" }, robot(false, 68), mark(knowsAlone(item) ? "match" : "unknown")),
             h("span", { class: "darrow", "aria-hidden": "true" }, "→"),
-            h("span", { class: "dduo" }, robot(true, 104), mark(item.verdict))),
-          APP.VERDICTS[item.verdict] ? h("div", { class: "dcard-verdict" }, h("span", { class: "pverdict " + item.verdict }, APP.VERDICTS[item.verdict])) : null))),
-        tech(h("p", { class: "dtech" }, `Answers by ${meta.models.answer}, with and without the recalled block · ${num(corpus.questions)} benchmark questions on this conversation, ${num(everyone.length)} recorded here`)),
+            h("span", { class: "dduo" }, robot(true, 68), mark(item.verdict)),
+            VERDICT_WORDS[item.verdict] ? h("span", { class: "pverdict " + item.verdict }, VERDICT_WORDS[item.verdict]) : null)))),
+        h("div", { class: "dkey simple" },
+          h("span", {}, robot(false, 44), "the model alone"), h("span", {}, robot(true, 44), "the same model with KGmemory"),
+          h("span", {}, h("i", { class: "dmark unknown" }, MARKS.unknown), "does not know"), h("span", {}, h("i", { class: "dmark match" }, MARKS.match), "right"), h("span", {}, h("i", { class: "dmark miss" }, MARKS.miss), "wrong")),
+        tech(h("p", { class: "dtech" }, `Answers by ${meta.models.answer}, without and with the recalled block; verdicts set by hand against the reference.`)),
       ],
     });
 
-    // 3. Ask: one question, the same model alone and with its memory.
+    // 4. Answer: one question, the same model alone and with its memory.
     const [answerLead, answerRest] = leadSentence(question.answer_with);
-    const verdict = APP.VERDICTS[question.verdict];
+    const twice = "The same language model is asked twice: alone, then with the memories KGmemory handed it.";
     add({
-      id: "ask", step: "Ask", scope: "question", anchor: "ask", focus: ".danswer.with .dbubble",
+      id: "ask", step: "Answer", scope: "question", anchor: "ask", focus: ".danswer.with .dbubble",
       headline: {
-        match: "With its memory, the model gives the expected answer",
-        trap: aloneUnknown ? "Both decline; only one says what it knows" : "A false premise, and the model does not play along",
-        miss: "A miss, kept on purpose",
+        match: "With its memory, the model gives the right answer",
+        trap: aloneUnknown ? "A trick question: neither answer falls for it" : "A trick question, and the model does not fall for it",
+        miss: "The miss: the fact was stored, but not handed over",
       }[question.verdict] || "The same question, without and with memory",
+      lede: {
+        match: `${twice} *Right* means the same as the expected answer of the benchmark; we compared them by hand.`,
+        trap: `${note} With its memory, the model also says what it does know.`,
+        miss: note,
+      }[question.verdict] || twice,
       say: {
         match: "Take this one. Alone, the model does not know; with its memory, it gives the expected answer.",
-        trap: `Take this one, a trap. ${noteLead} Both decline; with its memory, the model also says what it knows.`,
-        miss: "Take the miss. The expected fact was stored, but it was not among the memories given to the model.",
+        trap: `Take this one, a trick question. ${leadSentence(note)[0]} Neither answer falls for it; with its memory, the model also says what it does know.`,
+        miss: "Take the miss. The expected fact was in the memory, but it was not among the memories handed to the model.",
       }[question.verdict] || "Take this one: the same model answers alone, then with its memory.",
       body: () => [
-        h("div", { class: "dasker" }, avatar("#5a6b7b", 104), h("div", { class: "dbubble question" }, question.text)),
+        question.tag ? h("p", { class: "dkind" }, h("b", {}, "Kind of question: "), question.tag) : null,
+        h("div", { class: "dasker" }, avatar("#5a6b7b", 92), h("div", { class: "dbubble question" }, question.text)),
         h("div", { class: "danswers" },
-          h("div", { class: "danswer" }, robot(false, 150),
-            h("div", { class: "dbubble" }, h("div", { class: "dwho" }, h("span", {}, "Model alone")), h("p", {}, question.answer_without))),
-          h("div", { class: "danswer with" }, robot(true, 150),
+          h("div", { class: "danswer" }, robot(false, 130),
+            h("div", { class: "dbubble" }, h("div", { class: "dwho" }, h("span", {}, "The model alone")), h("p", {}, question.answer_without))),
+          h("div", { class: "danswer with" }, robot(true, 130),
             h("div", { class: "dbubble" },
-              h("div", { class: "dwho" }, h("span", {}, "With its memory graph"),
-                verdict ? h("span", { class: "pverdict " + question.verdict }, verdict + (question.verdict === "trap" && aloneUnknown ? " too" : "")) : null),
+              h("div", { class: "dwho" }, h("span", {}, "With KGmemory"),
+                VERDICT_SENTENCES[question.verdict] ? h("span", { class: "pverdict " + question.verdict }, VERDICT_SENTENCES[question.verdict] + (question.verdict === "trap" && aloneUnknown ? " either" : "")) : null),
               h("p", {}, h("strong", {}, answerLead), answerRest)))),
-        h("p", { class: "dnote" }, h("b", {}, "Expected: "), question.reference,
-          question.note ? h("span", { class: "tech" }, ` · ${question.note}`) : null),
+        h("p", { class: "dnote" }, h("b", {}, "Expected answer, from the benchmark: "), question.reference,
+          question.note && question.verdict === "match" ? h("span", { class: "tech" }, ` · ${question.note}`) : null),
       ],
     });
 
-    // 4. Graph: every memory given to the model, with the concepts it is about. The drawing says nothing of which
-    // route found a memory: that is the next beat.
+    // 5. Recall: every memory handed to the model, with the concepts it is about. The drawing says nothing of how a
+    // memory was found: that is the next beat.
     const drawn = servedGraph(question);
     add({
-      id: "graph", step: "Graph", scope: "question", anchor: "ask", focus: ".dlegend",
-      headline: `The model was given ${handed} from that graph`,
-      say: `It was given ${handed}: here they are, with the concepts they are about.`,
+      id: "graph", step: "Recall", scope: "question", anchor: "ask", focus: ".dlegend",
+      headline: `KGmemory handed the model ${handed}`,
+      lede: `Each orange dot is a *memory*: one fact from the conversation. Each violet circle is a *concept*: a person, a place or a topic. A line means “this memory is about this concept”. KGmemory hands over at most ${num(limit)} memories per question.`,
+      say: `For this question, KGmemory handed the model ${handed}: the orange dots. The violet circles are the concepts they are about.`,
       body: () => [
         memoryGraph(question, memory),
         h("div", { class: "dmore" },
           h("span", { class: "dlegend" }, h("i", { class: "asked" }), "concept in the question", h("i", { class: "concept" }), "other concept",
-            h("i", { class: "memory" }), "memory", h("i", { class: "traced" }), "traced two steps on"),
-          h("span", { class: "drest" }, `${num(drawn.memories.length)} memories · ${num(drawn.concepts.length)} concepts · ${num(drawn.links.length)} links`)),
-        tech(h("p", { class: "dtech" }, `Links drawn: the subjects of each memory. Graph query: ${num(question.graph.pool)} memories in ${ms(question.graph.ms)} (SPARQL CONSTRUCT, at most ${question.graph.hops} SKOS hops, ${num(question.graph.triples)} triples).`)),
+            h("i", { class: "memory" }), "memory", h("i", { class: "traced" }), "memory opened two slides on"),
+          h("span", { class: "drest" }, `${num(drawn.memories.length)} memories · ${num(drawn.concepts.length)} concepts`)),
+        tech(h("p", { class: "dtech" }, `Links drawn: the subjects of each memory (${num(drawn.links.length)}). Graph query: ${num(question.graph.pool)} memories in ${ms(question.graph.ms)} (SPARQL CONSTRUCT, at most ${question.graph.hops} SKOS hops, ${num(question.graph.triples)} triples).`)),
       ],
     });
 
-    // 5. Search: how they were found, to scale.
-    const asked = APP.recognisedTopics(question);
+    // 6. Search: how they were found, to scale, with each way defined under the drawing.
+    const askedLabels = APP.recognisedTopics(question).slice(0, MAX_NAMED_CONCEPTS).map((row) => row.label);
     add({
       id: "search", step: "Search", scope: "question", anchor: "read", focus: ".dflow .dframe",
-      headline: `${num(pool.total)} candidates, ${from.allKept ? "all kept" : `${num(pool.kept)} kept`}: ${graphShare}`,
-      say: `No large language model finds them. ${num(pool.total)} candidates, ${from.allKept ? "all kept" : `the best ${num(pool.kept)} kept`}; ${from.keptGraph ? num(from.keptGraph) : "none"} came from the graph query.`,
+      headline: from.allKept ? `All ${num(pool.total)} candidates found were handed over` : `The ${num(pool.kept)} were picked from ${num(pool.total)} candidates`,
+      lede: `A *candidate* is a memory that might help. KGmemory collects candidates in three ways, orders them by importance, recency and use, and keeps ${from.allKept ? `at most ${num(limit)}: here, all of them` : `the best ${num(pool.kept)}`}. No large language model is used: the search took ${ms(question.ms)}.`,
+      say: `${from.allKept ? `Only ${num(pool.total)} candidates were found, and all were handed over.` : `They were picked from ${num(pool.total)} candidates.`} Candidates are found three ways: through the graph, by a shared topic, by closeness of meaning. No large language model is used.`,
       body: () => [
-        h("div", { class: "dconcepts" }, icon("chat", 52), h("span", { class: "darrow", "aria-hidden": "true" }, "→"),
-          asked.slice(0, MAX_NAMED_CONCEPTS).map((row) => h("span", { class: "ppill" }, clip(row.label, 20))),
-          asked.length > MAX_NAMED_CONCEPTS ? h("span", { class: "ppill more" }, `+ ${num(asked.length - MAX_NAMED_CONCEPTS)}`) : null,
-          h("span", { class: "dchip" }, icon("search", 40), `no large language model · ${ms(question.ms)}`)),
         flowDiagram(question),
+        definitions([
+          [capital(ROUTES.graph.name) + ":", `memories filed under the concepts found in the question${askedLabels.length ? ` (${askedLabels.join(", ")})` : ""}, or under closely related ones.`, ROUTES.graph.colour],
+          pool.bridge ? [capital(ROUTES.shared.name) + ":", "memories filed under the other topics of the best candidates.", ROUTES.shared.colour] : null,
+          [capital(ROUTES.meaning.name) + ":", "memories whose wording is close to that of the question.", ROUTES.meaning.colour],
+        ]),
         tech(h("p", { class: "dtech" }, `Embedding ${meta.models.embedding} · reciprocal rank fusion (k = ${question.ranking.rrf_k}) · the kept ones ordered by ${question.ranking.model}`)),
       ],
     });
 
-    // 6. Source: one memory and what the graph holds about where it comes from, then the count for all of them.
+    // 7. Source: one memory and what the graph holds about where it comes from, then the count for all of them.
     const stamp = (iso) => (iso ? `${shortDate(iso)}, ${iso.slice(11, 16)} UTC` : null);
     const failed = total - facts.passed;
     add({
       id: "source", step: "Source", scope: "question", anchor: "provenance", focus: ".dnode.memory",
-      headline: facts.quoted === total ? `All ${num(total)} memories trace back to a quote` : `${num(facts.quoted)} of the ${num(total)} memories trace back to a quote`,
-      say: `${facts.quoted === total ? `Each of the ${num(total)} links` : `${num(facts.quoted)} of the ${num(total)} link`} back to the exact words said. Here is one, with its check and its records.`,
+      headline: facts.quoted === total ? "Every memory keeps the exact words it was written from" : `${num(facts.quoted)} of the ${num(total)} memories keep the exact words they were written from`,
+      lede: `Here is one of the ${num(total)}, opened. Left: ${speaker ? `what ${speaker} really said` : "what was really said"}, with the words the memory was written from highlighted. Below: what KGmemory recorded about it. The *format check* tells that a record is complete, not that the fact is true.`,
+      say: `Each memory keeps the exact words it was written from. Here is one, with its format check and its records.`,
       body: () => [
         provenanceGraph(memory, quoteTurn, speaker, [
-          ["pen", "Written", stamp(activity.started), "written by"],
-          ["check", plural(failed, "violation"), `form check, ${counts.shapes} rules`, "checked by", failed ? "bad" : "ok"],
-          ["search", "Looked up", stamp(question.prov.started), "used by"],
+          ["pen", "Written down", stamp(activity.started), "written"],
+          ["check", failed ? "Format check failed" : "Format check passed", `${num(counts.shapes)} rules, ${failed ? num(failed) : "none"} broken`, "checked", failed ? "bad" : "ok"],
+          ["search", "Handed to the model", stamp(question.prov.started), "used"],
         ]),
         h("div", { class: "dmore" }, h("span", { class: "drest" }, tiles(facts.quoted, "full"), total > facts.quoted ? tiles(total - facts.quoted) : null,
-          `${num(facts.quoted)} of ${num(total)} with their quote`)),
+          `${num(facts.quoted)} of the ${num(total)} memories handed over keep their quote`)),
         tech(h("p", { class: "dtech" }, `${memory.iri} · ${activity.operation || "write"} ${activity.iri || ""} · Retrieval ${question.prov.iri}`)),
       ],
     });
 
-    // 7. All of them: the same two counts for every recorded question.
+    // 8. All of them: the same two counts for every recorded question.
     add({
       id: "all", step: `All ${num(everyone.length)}`, scope: "demo", anchor: "read", focus: ".dacross .dframe",
-      headline: `${num(quotedAll)} of ${num(servedAll)} memories given trace back to a quote; ${num(graphAll)} came from the graph query`,
-      say: `Over the ${num(everyone.length)} questions: ${num(servedAll)} memories given, ${quotedAll === servedAll ? "all" : num(quotedAll)} traced to a quote, and ${num(graphAll)} from the graph query.`,
+      headline: everyQuote ? `All ${num(servedAll)} memories handed over keep their quote` : `${num(quotedAll)} of the ${num(servedAll)} memories handed over keep their quote`,
+      lede: "One row per question. The bar counts the memories handed to the model, coloured by how they were found. The last column counts those that keep their *quote*: the exact words they were written from.",
+      say: `Over the ${num(everyone.length)} questions, ${everyQuote ? `all ${num(servedAll)}` : `${num(quotedAll)} of the ${num(servedAll)}`} memories handed over keep their quote; ${graphAll ? num(graphAll) : "none"} were found through the graph.`,
       body: () => [
         acrossChart(question),
-        tech(h("p", { class: "dtech" }, `Bars: memories kept per question (RETRIEVE_K = ${num(Math.max(...all.map((row) => row.from.pool.kept)))}), by the route that admitted them; the shared-topic route is counted, not listed, in the recording.`)),
+        tech(h("p", { class: "dtech" }, `Bars: memories kept per question (RETRIEVE_K = ${num(limit)}). “Through the graph”: in the pool of the SPARQL query. The bridge route is counted, not listed, in the recording.`)),
       ],
     });
 
-    // 8. Upkeep: the passes that ran on the store after it was written, with what each one reports.
+    // 9. Upkeep: the jobs that ran on the memory after it was written, with what each one asks and reports.
     add({
       id: "upkeep", step: "Upkeep", scope: "demo", anchor: "store", focus: ".dstore",
-      headline: `${capital(few(DATA.maintenance.length, "upkeep pass", "upkeep passes"))} ran on the store, each with its report`,
-      say: `After writing, ${few(DATA.maintenance.length, "upkeep pass", "upkeep passes")} ran for real. Each reports what it did, even when that is nothing.`,
-      body: () => [
-        upkeepDiagram(),
-        tech(h("p", { class: "dtech" }, DATA.maintenance.map((pass) => pass.command).filter(Boolean)[0] || "")),
-      ],
+      headline: `After writing, ${few(DATA.maintenance.length, "upkeep job goes", "upkeep jobs go")} over the memory`,
+      lede: "A memory needs upkeep, like a notebook: spot what is outdated, contradictory or no longer useful. These jobs ran on the recorded memory. Each reports what it did, even when that is nothing.",
+      say: `After writing, ${few(DATA.maintenance.length, "upkeep job goes", "upkeep jobs go")} over the memory. Each reports what it did, even when that is nothing.`,
+      body: () => [upkeepDiagram()],
     });
 
-    // 9. Recap: the three things over the whole demo, the page behind the address, the address.
+    // 10. Recap: what was shown and what it is not, the page behind the address, the address.
+    const slowest = Math.max(...everyone.map((item) => item.ms));
     const points = [
-      ["chat", "Ask", `${num(matches)} of ${num(everyone.length)} answered only with memory${traps ? `; ${few(traps, "trap", "traps")} avoided` : ""}${misses ? `, ${few(misses, "miss", "misses")} kept` : ""}`],
-      ["search", "Search", `no large language model; ${num(graphAll)} of ${num(servedAll)} from the graph query`],
-      ["graph", "Source", `${num(quotedAll)} of ${num(servedAll)} memories traced to a quote`],
+      ["chat", "It helps", `With its memory the model answers ${num(matches)} of ${num(everyone.length)} questions; alone, ${alone}.`],
+      ["search", "It is a search", `No large language model picks the memories: ${ms(slowest)} at most. ${graphAll ? num(graphAll) : "None"} of ${num(servedAll)} came through the graph.`],
+      ["graph", "It can be checked", `${everyQuote ? `All ${num(servedAll)}` : `${num(quotedAll)} of ${num(servedAll)}`} memories handed over keep the exact words they were written from.`],
     ];
     add({
       id: "recap", step: "Recap", scope: "demo", anchor: "store", focus: ".pqr",
       headline: "A memory you can open and check",
-      say: "So: answers, a search without a large language model, and every memory traced to its source. The address is here.",
+      lede: `This was a recording of the real system on one conversation of the benchmark. The ${num(everyone.length)} questions were chosen to show how it works: they are not a score. The page at this address lets you open every step yourself.`,
+      say: `So: a memory that helps the model answer, and that anyone can open and check. ${capital(few(everyone.length, "chosen question", "chosen questions"))}, not a score. The address is here.`,
       body: () => [
         h("div", { class: "drecap" },
-          h("div", { class: "dpoints" }, points.map(([name, label, line]) => h("div", { class: "dpoint" }, icon(name, 76), h("span", {}, h("strong", {}, label), line)))),
+          h("div", { class: "dpoints" }, points.map(([name, label, line]) => h("div", { class: "dpoint" }, icon(name, 68), h("span", {}, h("strong", {}, label), line)))),
           h("div", { class: "dpreview" }, h("div", { class: "dchrome", "aria-hidden": "true" }, h("i", {}), h("i", {}), h("i", {})),
-            h("img", { src: PREVIEW_SOURCE, alt: "The page behind the address: the same recording, step by step", width: "640", height: "400" })),
+            h("img", { src: PREVIEW_SOURCE, alt: "The page behind the address: the same recording, step by step", width: "560", height: "350" })),
           h("div", { class: "pqr" },
             h("img", { src: QR_SOURCE, alt: `QR code to ${DEMO_URL.join("")}`, width: "340", height: "340" }),
             h("a", { class: "purl", href: `https://${DEMO_URL.join("")}/`, tabindex: "-1" }, DEMO_URL[0], h("br"), DEMO_URL[1]))),
@@ -693,9 +777,9 @@
     const counts = meta.counts;
     return [
       ["What does the graph add over a vector search?",
-        `On this question ${num(from.keptGraph)} of the ${num(from.pool.kept)} memories kept came from the graph query${from.keptShared ? `, and ${from.exact ? "" : "at most "}${num(from.keptShared)} through a topic shared with the first candidates, which is also a link followed in the graph` : ""}. Over the ${DATA.questions.length} recorded questions: ${num(sum("keptGraph"))} of ${num(every.reduce((total, item) => total + item.pool.kept, 0))} from the graph query, at most ${num(sum("keptShared"))} through a shared topic. Beyond that, the graph holds the concept layer, the source anchors, the checks and the operation records.`],
-      ["Why this question, and what is the score?",
-        `The ${DATA.questions.length} questions are taken from the ${num(meta.corpus.questions)} benchmark questions of this conversation, a miss included. No aggregate score is on this page: say where it is, or that it is not shown here.`],
+        `On this question ${num(from.keptGraph)} of the ${num(from.pool.kept)} memories kept came through the graph (the graph query)${from.keptShared ? `, and ${from.exact ? "" : "at most "}${num(from.keptShared)} through a topic shared with the first candidates, which is also a link followed in the graph` : ""}. Over the ${DATA.questions.length} recorded questions: ${num(sum("keptGraph"))} of ${num(every.reduce((total, item) => total + item.pool.kept, 0))} from the graph query, at most ${num(sum("keptShared"))} through a shared topic. Beyond that, the graph holds the concept layer, the source anchors, the checks and the operation records.`],
+      ["Why these questions, and what is the score?",
+        `They are taken from the ${num(meta.corpus.questions)} benchmark questions of this conversation: ${num(BENCHMARK.recorded)} were recorded and ${DATA.questions.length} are shown, one per kind of difficulty, the only miss included. No aggregate score is on this page: say where it is, or that it is not shown here.`],
       [`Does the form check (${counts.shapes} rules) verify the facts?`,
         "No. It checks that a record is well formed before it is written; only a violation blocks a write. Truth is checked by going back to the quote."],
       ["How was the drawing of the graph made, and does it show how the memories were found?",
@@ -752,12 +836,14 @@
       h("header", { class: "phead" },
         h("div", { class: "pkicker" }, h("b", {}, `${tour.beat + 1} / ${beats.length}`),
           beats.map((item, index) => h("span", { class: "pstep" + (index === tour.beat ? " now" : index < tour.beat ? " done" : "") }, item.step))),
-        h("h1", { class: "pheadline" }, beat.headline)),
+        h("h1", { class: "pheadline" }, beat.headline),
+        beat.lede ? h("p", { class: "plede" }, rich(beat.lede)) : null),
       h("div", { class: "pbody" }, beat.body().flat(Infinity).filter(Boolean)),
       h("footer", { class: "pfoot" },
         h("span", { class: "pcontext" }, beat.scope === "question"
-          ? [h("b", { class: "pwhich" }, `Question ${tour.question + 1} of ${DATA.questions.length}`), `“${clip(question.text, 80)}”`]
+          ? [h("b", { class: "pwhich" }, `Question ${tour.question + 1} of ${DATA.questions.length}`), `“${clip(question.text, 64)}”`]
           : [h("i", { class: "pdot", "aria-hidden": "true" }), stampLine()]),
+        beat.scope === "question" ? h("span", { class: "phint" }, `keys 1 to ${DATA.questions.length}: another question`) : null,
         h("span", { class: "pclock", hidden: !tour.clock || null }, clockText()),
         h("span", { class: "pnav" },
           h("button", { type: "button", tabindex: "-1", "aria-label": "Previous beat", disabled: first || null, onclick: () => go(tour.beat - 1) }, "‹"),
@@ -860,7 +946,7 @@
   window.KGTOUR = {
     open, close, state: tour, wordsPerMinute: WORDS_PER_MINUTE, pauseSeconds: PAUSE_SECONDS,
     expect: (questionIndex) => expectedQuestions(DATA.questions[questionIndex]),
-    beats: (questionIndex) => buildBeats(DATA.questions[questionIndex]).map(({ id, step, scope, headline, say, seconds, focus }) => ({ id, step, scope, headline, say, seconds, focus })),
+    beats: (questionIndex) => buildBeats(DATA.questions[questionIndex]).map(({ id, step, scope, headline, lede, say, seconds, focus }) => ({ id, step, scope, headline, lede: plain(lede), say, seconds, focus })),
   };
 
   // ---------- boot ----------
